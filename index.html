@@ -98,7 +98,7 @@ if (window.pdfjsLib) {
 </head>
 <body>
 
-<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v5</span></div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v6</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -392,9 +392,7 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== 智能边界检测 v5：先切列，再切行 ==========
-  // 适用：单列布局（图2）、多列网格（P11）都能处理
-  // 关键：切割线必须在空白带，不能穿过产品
+  // ========== 智能边界检测 v6：X/Y 双向独立切分 + 网格 cell + 严格产品识别 ==========
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -409,7 +407,6 @@ if (window.pdfjsLib) {
     sctx.drawImage(srcCanvas, 0, 0, W, H);
     var imgData = sctx.getImageData(0, 0, W, H).data;
 
-    // 灰度 + 自适应阈值
     var gray = new Uint8Array(W * H);
     var sum = 0;
     for (var i = 0; i < W * H; i++) {
@@ -418,64 +415,57 @@ if (window.pdfjsLib) {
       sum += g;
     }
     var avg = sum / (W * H);
-    var threshold = avg - 18;
+    var threshold = avg - 22; // 提高阈值，让白色马桶的淡阴影不被误判为前景
 
     var binary = new Uint8Array(W * H);
     for (var j = 0; j < W * H; j++) binary[j] = gray[j] < threshold ? 1 : 0;
 
-    // === 第 1 步：整页 X 投影 → 切列 ===
+    // === 第 1 步：整页 X 投影 → 找所有列空白带 ===
     var projX = new Uint32Array(W);
     for (var x = 0; x < W; x++) {
       for (var y = 0; y < H; y++) {
         if (binary[y * W + x]) projX[x]++;
       }
     }
+    // X 空白阈值：列内前景 < H*0.3% 才算空白（产品内的窄空隙不会达标）
+    var blankThreshX = Math.max(2, Math.round(H * 0.003));
+    // X 空白带最小宽度 3px
+    var colSplits = findGutters(projX, 0, W, 3, blankThreshX);
 
-    // X 空白阈值：列内前景像素少于 H*1% 才算空白（避免产品内少量空隙被误判）
-    var blankThreshX = Math.max(3, Math.round(H * 0.01));
-    // X 空白带最小宽度 5px（产品列之间的真空白）
-    var colSplits = findGutters(projX, 0, W, 5, blankThreshX);
-    var colRanges = buildRanges(0, W, colSplits);
-
-    // === 第 2 步：对每列做 Y 投影 → 切行 ===
-    var allCells = [];
-    for (var ci = 0; ci < colRanges.length; ci++) {
-      var cx0 = colRanges[ci][0];
-      var cx1 = colRanges[ci][1];
-      var cw = cx1 - cx0;
-      if (cw < 30) continue; // 太窄的列（边距）跳过
-
-      // 检查该列整体填充率
-      var colFill = computeColumnFill(binary, cx0, cx1, W, H);
-      if (colFill < 0.008) continue; // 该列几乎没内容，跳过
-
-      // 该列内的 Y 投影
-      var projY = new Uint32Array(H);
-      for (var yy = 0; yy < H; yy++) {
-        for (var xx = cx0; xx < cx1; xx++) {
-          if (binary[yy * W + xx]) projY[yy]++;
-        }
+    // === 第 2 步：整页 Y 投影 → 找所有行空白带 ===
+    var projY = new Uint32Array(H);
+    for (var yy = 0; yy < H; yy++) {
+      for (var xx = 0; xx < W; xx++) {
+        if (binary[yy * W + xx]) projY[yy]++;
       }
+    }
+    // Y 空白阈值：行内前景 < W*0.3% 才算空白
+    var blankThreshY = Math.max(2, Math.round(W * 0.003));
+    // Y 空白带最小宽度 3px
+    var rowSplits = findGutters(projY, 0, H, 3, blankThreshY);
 
-      // Y 空白阈值：行内前景像素少于 列宽*2% 才算空白
-      var blankThreshY = Math.max(2, Math.round(cw * 0.02));
-      // Y 空白带最小宽度 4px（产品间行距）
-      var rowSplits = findGutters(projY, 0, H, 4, blankThreshY);
-      var rowRanges = buildRanges(0, H, rowSplits);
+    // === 第 3 步：构建网格 cell ===
+    var colRanges = buildRanges(0, W, colSplits);
+    var rowRanges = buildRanges(0, H, rowSplits);
 
-      // === 第 3 步：识别每行的类型（产品 vs 文字）===
-      for (var ri = 0; ri < rowRanges.length; ri++) {
+    var allCells = [];
+    for (var ri = 0; ri < rowRanges.length; ri++) {
+      for (var ci = 0; ci < colRanges.length; ci++) {
+        var cx0 = colRanges[ci][0];
+        var cx1 = colRanges[ci][1];
         var ry0 = rowRanges[ri][0];
         var ry1 = rowRanges[ri][1];
+        var cw = cx1 - cx0;
         var rh = ry1 - ry0;
-        if (rh < 8) continue;
+        if (cw < 25 || rh < 15) continue;
 
         var cellFill = computeCellFill(binary, cx0, ry0, cx1, ry1, W);
-        if (cellFill < 0.01) continue;
+        if (cellFill < 0.012) continue;
 
-        // 用实心区域检测判断是否是产品图
+        // 严格的产品识别：检测是否有大块实心区域（产品图特征）
+        // 关键：马桶图边缘有大片连续前景，文字内部都是稀疏笔划
         var hasImage = detectSolidRegion(binary, cx0, ry0, cx1, ry1, W);
-        var isLikelyText = !hasImage && rh < 80; // 高度小于 80 且无实心 → 文字
+        var isLikelyText = !hasImage;
 
         allCells.push({
           x: cx0, y: ry0, w: cw, h: rh,
@@ -488,8 +478,7 @@ if (window.pdfjsLib) {
 
     if (!allCells.length) return [];
 
-    // === 第 4 步：产品 cell 向下扩展，归并下方文字 cell ===
-    // 按列分组
+    // === 第 4 步：按列分组，产品 cell 向下扩展归并文字 ===
     var columnGroups = {};
     for (var mi = 0; mi < allCells.length; mi++) {
       var c = allCells[mi];
@@ -501,21 +490,19 @@ if (window.pdfjsLib) {
     var finalBlocks = [];
     for (var colKey in columnGroups) {
       var colCells = columnGroups[colKey];
-      // 按 Y 排序
       colCells.sort(function (a, b) { return a.y - b.y; });
 
       for (var ni = 0; ni < colCells.length; ni++) {
         var cell = colCells[ni];
-        if (!cell.isProduct) continue; // 只从产品 cell 出发
+        if (!cell.isProduct) continue;
 
         var finalY1 = cell.y + cell.h;
-        // 向下查找同列、距离近的文字 cell，归并
         for (var nj = ni + 1; nj < colCells.length; nj++) {
           var nextCell = colCells[nj];
-          if (!nextCell.isText) break; // 遇到下一个产品，停止
+          if (!nextCell.isText) break;
 
           var gap = nextCell.y - finalY1;
-          if (gap > 30) break; // 距离太远，不归并
+          if (gap > 30) break;
 
           finalY1 = nextCell.y + nextCell.h;
         }
@@ -531,7 +518,6 @@ if (window.pdfjsLib) {
 
     if (!finalBlocks.length) return [];
 
-    // 过滤
     var pageArea = W * H;
     var filtered = [];
     for (var fi = 0; fi < finalBlocks.length; fi++) {
@@ -560,16 +546,29 @@ if (window.pdfjsLib) {
     return result;
   }
 
-  function computeColumnFill(binary, x0, x1, W, H) {
-    var cnt = 0;
-    var total = 0;
-    for (var y = 0; y < H; y += 2) {
-      for (var x = x0; x < x1; x += 2) {
-        total++;
-        if (binary[y * W + x]) cnt++;
+  // 严格的产品识别：需要找到 20x20 窗口填充率 > 50% 才认为是产品图
+  // 文字 cell 内部不会有这么大的实心区域
+  function detectSolidRegion(binary, x0, y0, x1, y1, W) {
+    var w = x1 - x0;
+    var h = y1 - y0;
+    var winSize = 20;
+    if (w < winSize || h < winSize) return false;
+
+    var step = 10;
+    for (var y = y0; y + winSize <= y1; y += step) {
+      for (var x = x0; x + winSize <= x1; x += step) {
+        var filled = 0;
+        for (var yy = 0; yy < winSize; yy++) {
+          for (var xx = 0; xx < winSize; xx++) {
+            if (binary[(y + yy) * W + (x + xx)]) filled++;
+          }
+        }
+        if (filled > winSize * winSize * 0.5) {
+          return true;
+        }
       }
     }
-    return total ? cnt / total : 0;
+    return false;
   }
 
   function computeCellFill(binary, x0, y0, x1, y1, W) {
@@ -582,29 +581,6 @@ if (window.pdfjsLib) {
       }
     }
     return total ? cnt / total : 0;
-  }
-
-  function detectSolidRegion(binary, x0, y0, x1, y1, W) {
-    var w = x1 - x0;
-    var h = y1 - y0;
-    var winSize = 10;
-    if (w < winSize || h < winSize) return false;
-
-    var step = 5;
-    for (var y = y0; y + winSize <= y1; y += step) {
-      for (var x = x0; x + winSize <= x1; x += step) {
-        var filled = 0;
-        for (var yy = 0; yy < winSize; yy++) {
-          for (var xx = 0; xx < winSize; xx++) {
-            if (binary[(y + yy) * W + (x + xx)]) filled++;
-          }
-        }
-        if (filled > winSize * winSize * 0.55) {
-          return true;
-        }
-      }
-    }
-    return false;
   }
 
   function findGutters(proj, start, end, minWidth, blankThreshold) {
