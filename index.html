@@ -4,54 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>以图搜图</title>
+<script src="./pdf.min.js"></script>
 <script>
-(function () {
-  var cdnList = [
-    'https://cdn.bootcdn.net/ajax/libs/pdf.js/2.16.105/legacy/pdf.min.js',
-    'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/legacy/build/pdf.min.js',
-    'https://cdn.staticfile.org/pdf.js/2.16.105/legacy/pdf.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/legacy/pdf.min.js'
-  ];
-  var idx = 0;
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.js';
+  window.__pdfReady = true;
+} else {
   window.__pdfReady = false;
-  window.__pdfFailed = false;
-  function tryNext() {
-    if (idx >= cdnList.length) {
-      window.__pdfFailed = true;
-      return;
-    }
-    var url = cdnList[idx];
-    idx++;
-    var s = document.createElement('script');
-    var settled = false;
-    var timer = setTimeout(function () {
-      if (settled) return;
-      settled = true;
-      s.onload = s.onerror = null;
-      tryNext();
-    }, 10000);
-    s.onload = function () {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (window.pdfjsLib) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = url.replace('pdf.min.js', 'pdf.worker.min.js');
-        window.__pdfReady = true;
-      } else {
-        tryNext();
-      }
-    };
-    s.onerror = function () {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      tryNext();
-    };
-    s.src = url;
-    document.head.appendChild(s);
-  }
-  tryNext();
-})();
+  window.__pdfFailed = true;
+}
 </script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -425,69 +386,109 @@
   .vendor-modal-box {
     background: #fff;
     border-radius: 10px;
-    padding: 20px;
+    padding: 18px;
     width: 100%;
     max-width: 320px;
   }
   .vendor-modal-title {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-    margin-bottom: 12px;
+    margin-bottom: 6px;
     color: #222;
   }
-  .vendor-modal-input {
+  .vendor-modal-desc {
+    font-size: 13px;
+    color: #777;
+    margin-bottom: 12px;
+  }
+  .vendor-modal-box input {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid #d5dae1;
     border-radius: 6px;
     font-size: 15px;
-    margin-bottom: 8px;
-  }
-  .vendor-modal-tip {
-    font-size: 12px;
-    color: #999;
     margin-bottom: 14px;
   }
-  .vendor-modal-actions {
+  .vendor-modal-btns {
     display: flex;
-    gap: 8px;
+    gap: 10px;
   }
-  .vendor-modal-actions .btn { margin: 0; flex: 1; }
+  .vendor-modal-btns .btn { margin: 0; flex: 1; }
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: #fff;
+    border-bottom: 1px solid #e5e6eb;
+  }
+  .toggle-label {
+    font-size: 14px;
+    color: #333;
+  }
+  .toggle-desc {
+    font-size: 12px;
+    color: #999;
+    margin-top: 2px;
+  }
+  .toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: #d5dae1;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle-switch.on { background: #1f6feb; }
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: #fff;
+    border-radius: 50%;
+    transition: left 0.2s;
+  }
+  .toggle-switch.on::after { left: 22px; }
 </style>
 </head>
 <body>
 
 <div class="header">以图搜图</div>
 
-<div id="page-search" class="container">
+<div id="tab-search" class="container">
   <div class="card">
-    <button class="btn" id="btn-pick-query">上传图片搜一搜</button>
+    <button class="btn" id="btn-pick-query">📷 上传查询图片</button>
     <input type="file" id="file-query" accept="image/*">
   </div>
 
-  <div id="query-card" class="card hidden">
-    <div class="section-title" style="margin-top:0;">待搜索图片</div>
-    <div class="query-preview"><img id="query-img" alt=""></div>
+  <div id="query-preview-wrap" class="card hidden">
+    <div class="section-title" style="margin-top:0">查询图片</div>
+    <div class="query-preview"><img id="query-preview-img" alt=""></div>
   </div>
 
-  <div id="result-area" class="hidden">
+  <div id="result-section" class="hidden">
     <div class="section-title">搜索结果（按相似度排序）</div>
-    <div id="result-grid" class="result-grid"></div>
+    <div id="result-list" class="result-grid"></div>
   </div>
 
-  <div id="search-empty" class="empty-tip hidden">资料库为空，请先到「资料库」页批量导入图片</div>
+  <div id="search-empty" class="empty-tip hidden">未找到相似图片，请先导入资料库</div>
 </div>
 
-<div id="page-lib" class="container hidden">
+<div id="tab-lib" class="container hidden">
   <div class="card">
     <div class="stat-block">
       <div class="stat-row">
         <span>库内图片总数</span>
-        <span class="stat-num" id="lib-count">0</span>
+        <span class="stat-num" id="stat-count">0</span>
       </div>
       <div class="stat-row">
         <span>占用存储空间</span>
-        <span class="stat-num" id="lib-size">0 KB</span>
+        <span class="stat-num" id="stat-size">0 B</span>
       </div>
     </div>
 
@@ -499,43 +500,67 @@
     </div>
 
     <button class="btn" id="btn-import-pdf">📄 导入 PDF 图册</button>
-    <input type="file" id="file-pdf" accept="application/pdf">
-    <button class="btn btn-secondary" id="btn-add-lib">🖼️ 批量导入图片</button>
-    <input type="file" id="file-lib" accept="image/*" multiple>
+    <button class="btn btn-secondary" id="btn-import-images">🖼️ 批量导入图片</button>
     <button class="btn btn-danger" id="btn-clear-lib">清空资料库</button>
+
+    <input type="file" id="file-images" accept="image/*" multiple>
+    <input type="file" id="file-pdf" accept="application/pdf">
   </div>
 
   <div class="section-title">库内图片（点击查看大图）</div>
-  <div id="lib-grid" class="lib-grid"></div>
-  <div id="lib-empty" class="empty-tip hidden">资料库为空，点击上方按钮批量导入</div>
+  <div id="lib-list" class="lib-grid"></div>
+  <div id="lib-empty" class="empty-tip">资料库为空，点击上方按钮批量导入</div>
 </div>
 
 <div class="tabbar">
-  <div class="tab active" data-page="search">
-    <span class="tab-icon">🔍</span>搜图
+  <div class="tab active" data-tab="search">
+    <span class="tab-icon">🔍</span>
+    <span>搜图</span>
   </div>
-  <div class="tab" data-page="lib">
-    <span class="tab-icon">🗂️</span>资料库
+  <div class="tab" data-tab="lib">
+    <span class="tab-icon">🗂️</span>
+    <span>资料库</span>
   </div>
 </div>
 
-<div id="loading" class="loading-mask hidden">
+<div id="loading-mask" class="loading-mask hidden">
   <div class="loading-box">
     <div id="loading-text">处理中…</div>
     <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
   </div>
 </div>
 
-<div id="preview" class="preview-mask hidden"><img id="preview-img" alt=""></div>
+<div id="preview-mask" class="preview-mask hidden">
+  <img id="preview-img" alt="">
+</div>
+
+<div id="vendor-modal" class="vendor-modal hidden">
+  <div class="vendor-modal-box">
+    <div class="vendor-modal-title" id="vendor-modal-title">输入厂家名称</div>
+    <div class="vendor-modal-desc">厂家名称会附加到每张图片，方便后续筛选查找。可留空。</div>
+    <input type="text" id="vendor-modal-input" placeholder="例如：恒洁 / 九牧 / 箭牌" maxlength="30">
+    <div class="vendor-modal-btns">
+      <button class="btn btn-secondary" id="vendor-modal-cancel">取消</button>
+      <button class="btn" id="vendor-modal-ok">确定</button>
+    </div>
+  </div>
+</div>
 
 <div id="pdf-picker" class="pdf-picker hidden">
   <div class="pdf-picker-header">
     <span>选择要导入的页面</span>
-    <button class="close-btn" id="pdf-picker-close">×</button>
+    <button class="close-btn" id="pdf-picker-close">✕</button>
   </div>
   <div class="pdf-picker-meta">
-    <span>厂家：<span class="vendor-name" id="pdf-vendor-display">-</span></span>
-    <span id="pdf-page-total">共 0 页</span>
+    <span>共 <b id="pdf-total-pages">0</b> 页</span>
+    <span>厂家：<span class="vendor-name" id="pdf-vendor-name"></span></span>
+  </div>
+  <div class="toggle-row">
+    <div>
+      <div class="toggle-label">智能拆分产品块</div>
+      <div class="toggle-desc">按空白区域把图+文识别为一个产品块，纯文字块不单独建图</div>
+    </div>
+    <div class="toggle-switch on" id="toggle-split"></div>
   </div>
   <div class="pdf-picker-actions">
     <button class="mini-btn" id="pdf-select-all">全选</button>
@@ -544,20 +569,8 @@
   </div>
   <div class="pdf-picker-grid" id="pdf-picker-grid"></div>
   <div class="pdf-picker-footer">
-    <div class="selected-count" id="pdf-selected-count">已选 0 页</div>
-    <button class="btn" id="pdf-confirm-import">确认导入选中页面</button>
-  </div>
-</div>
-
-<div id="vendor-modal" class="vendor-modal hidden">
-  <div class="vendor-modal-box">
-    <div class="vendor-modal-title" id="vendor-modal-title">输入厂家名称</div>
-    <input type="text" class="vendor-modal-input" id="vendor-modal-input" placeholder="例如：箭牌、恒洁、九牧…" maxlength="30">
-    <div class="vendor-modal-tip">厂家名称会附加到每张图片，方便后续筛选查找。可留空。</div>
-    <div class="vendor-modal-actions">
-      <button class="btn btn-secondary" id="vendor-modal-cancel">取消</button>
-      <button class="btn" id="vendor-modal-ok">确定</button>
-    </div>
+    <div class="selected-count">已选 <b id="pdf-selected-count">0</b> 页</div>
+    <button class="btn" id="pdf-import-confirm">开始导入</button>
   </div>
 </div>
 
@@ -569,6 +582,8 @@
   var DB_VERSION = 1;
   var STORE = 'images';
   var db = null;
+
+  function $(id) { return document.getElementById(id); }
 
   function openDB(cb) {
     var req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -583,486 +598,715 @@
       cb && cb();
     };
     req.onerror = function () {
-      alert('本地存储初始化失败，请检查浏览器设置');
+      alert('数据库打开失败');
     };
   }
 
-  function addImage(record, cb) {
+  function dbAdd(record, cb) {
     var tx = db.transaction(STORE, 'readwrite');
-    var store = tx.objectStore(STORE);
-    var req = store.add(record);
-    req.onsuccess = function (e) { cb && cb(e.target.result); };
-    req.onerror = function () { cb && cb(null); };
+    tx.objectStore(STORE).add(record);
+    tx.oncomplete = function () { cb && cb(); };
   }
 
-  function getAllImages(cb) {
+  function dbGetAll(cb) {
     var tx = db.transaction(STORE, 'readonly');
-    var store = tx.objectStore(STORE);
-    var req = store.getAll();
-    req.onsuccess = function (e) { cb(e.target.result || []); };
-    req.onerror = function () { cb([]); };
+    var req = tx.objectStore(STORE).getAll();
+    req.onsuccess = function () { cb(req.result || []); };
   }
 
-  function deleteImage(id, cb) {
+  function dbDelete(id, cb) {
     var tx = db.transaction(STORE, 'readwrite');
-    var store = tx.objectStore(STORE);
-    var req = store.delete(id);
-    req.onsuccess = function () { cb && cb(); };
-    req.onerror = function () { cb && cb(); };
+    tx.objectStore(STORE)['delete'](id);
+    tx.oncomplete = function () { cb && cb(); };
   }
 
-  function clearImages(cb) {
+  function dbClear(cb) {
     var tx = db.transaction(STORE, 'readwrite');
-    var store = tx.objectStore(STORE);
-    var req = store.clear();
-    req.onsuccess = function () { cb && cb(); };
-    req.onerror = function () { cb && cb(); };
+    tx.objectStore(STORE).clear();
+    tx.oncomplete = function () { cb && cb(); };
   }
 
-  function computeAHashDHash(imgEl) {
-    var w = 9, h = 8;
-    var canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    var ctx = canvas.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, w, h);
-    var data = ctx.getImageData(0, 0, w, h).data;
-    var gray = [];
-    var i, idx;
-    for (i = 0; i < w * h; i++) {
-      idx = i * 4;
-      gray[i] = (data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114) | 0;
-    }
-    var sum = 0, count = 0, r, c;
-    for (r = 0; r < 8; r++) {
-      for (c = 0; c < 8; c++) {
-        sum += gray[r * 9 + c];
-        count++;
-      }
-    }
-    var avg = sum / count;
-    var aHash = '';
-    for (r = 0; r < 8; r++) {
-      for (c = 0; c < 8; c++) {
-        aHash += (gray[r * 9 + c] >= avg ? '1' : '0');
-      }
-    }
-    var dHash = '';
-    for (r = 0; r < 8; r++) {
-      for (c = 0; c < 8; c++) {
-        dHash += (gray[r * 9 + c] > gray[r * 9 + c + 1] ? '1' : '0');
-      }
-    }
-    return { ahash: aHash, dhash: dHash };
+  function loadImage(src, cb) {
+    var img = new Image();
+    img.onload = function () { cb(img); };
+    img.onerror = function () { alert('图片加载失败'); };
+    img.src = src;
   }
 
-  var _cosTable = null;
-  function getCosTable() {
-    if (_cosTable) return _cosTable;
-    var size = 32;
-    _cosTable = [];
-    for (var u = 0; u < 8; u++) {
-      var row = [];
-      for (var x = 0; x < size; x++) {
-        row.push(Math.cos((2 * x + 1) * u * Math.PI / (2 * size)));
-      }
-      _cosTable.push(row);
-    }
-    return _cosTable;
-  }
-
-  function computePHash(imgEl) {
-    var size = 32;
+  function imageToCanvas(img, size) {
     var canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     var ctx = canvas.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, size, size);
-    var data = ctx.getImageData(0, 0, size, size).data;
+    ctx.drawImage(img, 0, 0, size, size);
+    return ctx.getImageData(0, 0, size, size).data;
+  }
+
+  function aHash(img) {
+    var data = imageToCanvas(img, 8);
     var gray = [];
-    var i, idx;
-    for (i = 0; i < size * size; i++) {
-      idx = i * 4;
-      gray[i] = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+    var sum = 0;
+    for (var i = 0; i < 64; i++) {
+      var g = (data[i * 4] * 299 + data[i * 4 + 1] * 587 + data[i * 4 + 2] * 114) / 1000;
+      gray.push(g);
+      sum += g;
     }
-    var cosT = getCosTable();
-    var dct = [];
-    var u, v, x, y;
-    for (u = 0; u < 8; u++) {
-      for (v = 0; v < 8; v++) {
-        var s = 0;
-        for (y = 0; y < size; y++) {
-          var rowBase = y * size;
-          var cosV = cosT[v][y];
-          for (x = 0; x < size; x++) {
-            s += gray[rowBase + x] * cosT[u][x] * cosV;
-          }
-        }
-        var cu = (u === 0) ? 1 / Math.SQRT2 : 1;
-        var cv = (v === 0) ? 1 / Math.SQRT2 : 1;
-        dct[u * 8 + v] = 0.25 * cu * cv * s;
-      }
-    }
-    var total = 0;
-    for (var k = 1; k < 64; k++) total += dct[k];
-    var avg = total / 63;
+    var avg = sum / 64;
     var hash = '';
-    for (var k2 = 0; k2 < 64; k2++) {
-      hash += (dct[k2] > avg ? '1' : '0');
+    for (var j = 0; j < 64; j++) {
+      hash += gray[j] >= avg ? '1' : '0';
     }
     return hash;
   }
 
-  function computeColorHist(imgEl) {
-    var size = 16;
+  function dHash(img) {
     var canvas = document.createElement('canvas');
+    canvas.width = 9;
+    canvas.height = 8;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, 9, 8);
+    var data = ctx.getImageData(0, 0, 9, 8).data;
+    var hash = '';
+    for (var y = 0; y < 8; y++) {
+      for (var x = 0; x < 8; x++) {
+        var i1 = (y * 9 + x) * 4;
+        var i2 = (y * 9 + x + 1) * 4;
+        var g1 = (data[i1] * 299 + data[i1 + 1] * 587 + data[i1 + 2] * 114) / 1000;
+        var g2 = (data[i2] * 299 + data[i2 + 1] * 587 + data[i2 + 2] * 114) / 1000;
+        hash += g1 > g2 ? '1' : '0';
+      }
+    }
+    return hash;
+  }
+
+  function pHash(img) {
+    var size = 32;
+    var data = imageToCanvas(img, size);
+    var gray = [];
+    for (var i = 0; i < size * size; i++) {
+      gray.push((data[i * 4] * 299 + data[i * 4 + 1] * 587 + data[i * 4 + 2] * 114) / 1000);
+    }
+    var dct = [];
+    var N = size;
+    var cu, cv, sum, u, v, x, y;
+    for (v = 0; v < 8; v++) {
+      for (u = 0; u < 8; u++) {
+        sum = 0;
+        for (y = 0; y < N; y++) {
+          for (x = 0; x < N; x++) {
+            sum += gray[y * N + x] *
+              Math.cos(((2 * x + 1) * u * Math.PI) / (2 * N)) *
+              Math.cos(((2 * y + 1) * v * Math.PI) / (2 * N));
+          }
+        }
+        cu = u === 0 ? 1 / Math.sqrt(2) : 1;
+        cv = v === 0 ? 1 / Math.sqrt(2) : 1;
+        dct.push(0.25 * cu * cv * sum);
+      }
+    }
+    var sorted = dct.slice().sort(function (a, b) { return a - b; });
+    var median = sorted[Math.floor(sorted.length / 2)];
+    var hash = '';
+    for (var j = 0; j < 64; j++) {
+      hash += dct[j] >= median ? '1' : '0';
+    }
+    return hash;
+  }
+
+  function colorHistogram(img) {
+    var canvas = document.createElement('canvas');
+    var size = 64;
     canvas.width = size;
     canvas.height = size;
     var ctx = canvas.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, size, size);
+    ctx.drawImage(img, 0, 0, size, size);
     var data = ctx.getImageData(0, 0, size, size).data;
-    var hist = [];
-    var i;
-    for (i = 0; i < 64; i++) hist.push(0);
-    for (var p = 0; p < size * size; p++) {
-      var idx = p * 4;
-      var r = data[idx] >> 6;
-      var g = data[idx + 1] >> 6;
-      var b = data[idx + 2] >> 6;
-      hist[(r << 4) | (g << 2) | b]++;
+    var hist = new Array(64);
+    for (var i = 0; i < 64; i++) hist[i] = 0;
+    for (var j = 0; j < size * size; j++) {
+      var r = data[j * 4] / 255;
+      var g = data[j * 4 + 1] / 255;
+      var b = data[j * 4 + 2] / 255;
+      var max = Math.max(r, g, b);
+      var min = Math.min(r, g, b);
+      var d = max - min;
+      var h = 0;
+      if (d !== 0) {
+        if (max === r) h = ((g - b) / d) % 6;
+        else if (max === g) h = (b - r) / d + 2;
+        else h = (r - g) / d + 4;
+        h *= 60;
+        if (h < 0) h += 360;
+      }
+      var s = max === 0 ? 0 : d / max;
+      var v = max;
+      var hi = Math.min(3, Math.floor(h / 90));
+      var si = Math.min(3, Math.floor(s * 4));
+      var vi = Math.min(3, Math.floor(v * 4));
+      hist[hi * 16 + si * 4 + vi]++;
     }
     var total = size * size;
-    for (i = 0; i < 64; i++) hist[i] = hist[i] / total;
+    for (var k = 0; k < 64; k++) hist[k] /= total;
     return hist;
   }
 
-  function computeAllFeatures(imgEl, cb) {
-    try {
-      var ad = computeAHashDHash(imgEl);
-      var phash = computePHash(imgEl);
-      var color = computeColorHist(imgEl);
-      cb({
-        ahash: ad.ahash,
-        dhash: ad.dhash,
-        phash: phash,
-        color: color,
-        legacy: ad.ahash + ad.dhash
-      });
-    } catch (e) {
-      cb(null);
-    }
-  }
-
-  function colorSimilarity(h1, h2) {
-    if (!h1 || !h2 || h1.length !== h2.length) return 0;
-    var s = 0;
-    for (var i = 0; i < h1.length; i++) s += Math.min(h1[i], h2[i]);
-    return s;
-  }
-
   function hammingDistance(h1, h2) {
-    if (!h1 || !h2 || h1.length !== h2.length) return 999;
     var d = 0;
     for (var i = 0; i < h1.length; i++) {
-      if (h1.charAt(i) !== h2.charAt(i)) d++;
+      if (h1[i] !== h2[i]) d++;
     }
     return d;
   }
 
-  function computeSimilarity(query, item) {
-    if (item.ahash && item.dhash && item.phash) {
-      var dA = hammingDistance(query.ahash, item.ahash);
-      var dD = hammingDistance(query.dhash, item.dhash);
-      var dP = hammingDistance(query.phash, item.phash);
-      var simHash = 1 - (dA + dD + dP) / 192;
-      var simColor = colorSimilarity(query.color, item.color);
-      return Math.round((simHash * 0.8 + simColor * 0.2) * 100);
+  function histSimilarity(h1, h2) {
+    var sum = 0;
+    for (var i = 0; i < h1.length; i++) {
+      sum += Math.min(h1[i], h2[i]);
     }
-    if (item.hash && query.legacy) {
-      var dist = hammingDistance(query.legacy, item.hash);
-      return Math.max(0, Math.round((1 - dist / 128) * 100));
-    }
-    return 0;
+    return sum;
   }
 
-  function fileToImage(file, cb) {
-    var reader = new FileReader();
-    reader.onload = function (e) {
-      var img = new Image();
-      img.onload = function () { cb(img, e.target.result); };
-      img.onerror = function () { cb(null); };
-      img.src = e.target.result;
-    };
-    reader.onerror = function () { cb(null); };
-    reader.readAsDataURL(file);
+  function computeSimilarity(q, item) {
+    var aDist = hammingDistance(q.ahash, item.ahash);
+    var dDist = hammingDistance(q.dhash, item.dhash);
+    var pDist = hammingDistance(q.phash, item.phash);
+    var aSim = 1 - aDist / 64;
+    var dSim = 1 - dDist / 64;
+    var pSim = 1 - pDist / 64;
+    var cSim = histSimilarity(q.color, item.color);
+    return aSim * 0.2 + dSim * 0.2 + pSim * 0.4 + cSim * 0.2;
   }
 
-  function dataUrlToImage(dataUrl, cb) {
-    var img = new Image();
-    img.onload = function () { cb(img); };
-    img.onerror = function () { cb(null); };
-    img.src = dataUrl;
-  }
-
-  function makeResized(imgEl, maxSide, quality) {
-    var w = imgEl.naturalWidth || imgEl.width;
-    var h = imgEl.naturalHeight || imgEl.height;
-    var scale = Math.min(1, maxSide / Math.max(w, h));
-    var cw = Math.max(1, Math.round(w * scale));
-    var ch = Math.max(1, Math.round(h * scale));
+  function makeThumb(img, maxSize) {
+    var w = img.width;
+    var h = img.height;
+    var scale = Math.min(1, maxSize / Math.max(w, h));
     var canvas = document.createElement('canvas');
-    canvas.width = cw;
-    canvas.height = ch;
-    var ctx = canvas.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, cw, ch);
-    return canvas.toDataURL('image/jpeg', quality);
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  function $(id) { return document.getElementById(id); }
+  // ========== 智能边界检测（连通区域法） ==========
+
+  function detectProductBlocks(srcCanvas) {
+    var analysisWidth = 400;
+    var scale = analysisWidth / srcCanvas.width;
+    var W = analysisWidth;
+    var H = Math.round(srcCanvas.height * scale);
+
+    var small = document.createElement('canvas');
+    small.width = W;
+    small.height = H;
+    var sctx = small.getContext('2d');
+    sctx.drawImage(srcCanvas, 0, 0, W, H);
+    var imgData = sctx.getImageData(0, 0, W, H).data;
+
+    var gray = new Uint8Array(W * H);
+    var sum = 0;
+    for (var i = 0; i < W * H; i++) {
+      var g = (imgData[i * 4] * 299 + imgData[i * 4 + 1] * 587 + imgData[i * 4 + 2] * 114) / 1000;
+      gray[i] = g;
+      sum += g;
+    }
+    var avg = sum / (W * H);
+    var threshold = avg - 20;
+
+    var binary = new Uint8Array(W * H);
+    for (var j = 0; j < W * H; j++) {
+      binary[j] = gray[j] < threshold ? 1 : 0;
+    }
+
+    var dilateRadius = Math.max(3, Math.round(W * 0.02));
+    var dilated = dilate(binary, W, H, dilateRadius);
+
+    var labels = new Int32Array(W * H);
+    var numLabels = connectedComponents(dilated, labels, W, H);
+
+    if (numLabels === 0) return [];
+
+    var boxes = new Array(numLabels + 1);
+    for (var l = 1; l <= numLabels; l++) {
+      boxes[l] = { minX: W, minY: H, maxX: -1, maxY: -1, pixelCount: 0 };
+    }
+    for (var y = 0; y < H; y++) {
+      for (var x = 0; x < W; x++) {
+        var lb = labels[y * W + x];
+        if (lb > 0) {
+          var b = boxes[lb];
+          if (x < b.minX) b.minX = x;
+          if (x > b.maxX) b.maxX = x;
+          if (y < b.minY) b.minY = y;
+          if (y > b.maxY) b.maxY = y;
+          b.pixelCount++;
+        }
+      }
+    }
+
+    var blocks = [];
+    var pageArea = W * H;
+    for (var lb2 = 1; lb2 <= numLabels; lb2++) {
+      var bx = boxes[lb2];
+      if (bx.maxX < 0) continue;
+      var bw = bx.maxX - bx.minX + 1;
+      var bh = bx.maxY - bx.minY + 1;
+      var barea = bw * bh;
+
+      if (barea < pageArea * 0.005) continue;
+      if (bw < 20 || bh < 20) continue;
+      if (barea > pageArea * 0.95) continue;
+
+      if (isPureTextBlock(binary, bx, W, H)) continue;
+
+      blocks.push({ x: bx.minX, y: bx.minY, w: bw, h: bh });
+    }
+
+    if (blocks.length === 0) return [];
+    if (blocks.length > 30) return [];
+    if (blocks.length === 1) {
+      var b0 = blocks[0];
+      if (b0.w * b0.h > pageArea * 0.85) return [];
+    }
+
+    var invScale = 1 / scale;
+    var pad = Math.max(4, Math.round(6 * invScale));
+    var result = [];
+    for (var bi = 0; bi < blocks.length; bi++) {
+      var blk = blocks[bi];
+      var rx = Math.max(0, Math.round(blk.x * invScale) - pad);
+      var ry = Math.max(0, Math.round(blk.y * invScale) - pad);
+      var rw = Math.min(srcCanvas.width - rx, Math.round(blk.w * invScale) + pad * 2);
+      var rh = Math.min(srcCanvas.height - ry, Math.round(blk.h * invScale) + pad * 2);
+      result.push({ x: rx, y: ry, w: rw, h: rh });
+    }
+    return result;
+  }
+
+  function isPureTextBlock(binary, box, W, H) {
+    var bw = box.maxX - box.minX + 1;
+    var bh = box.maxY - box.minY + 1;
+
+    var winSize = Math.max(12, Math.floor(Math.min(bw, bh) / 6));
+    if (winSize > Math.min(bw, bh)) winSize = Math.min(bw, bh);
+    if (winSize < 8) {
+      return true;
+    }
+
+    var step = Math.max(2, Math.floor(winSize / 3));
+
+    for (var wy = box.minY; wy + winSize <= box.maxY + 1; wy += step) {
+      for (var wx = box.minX; wx + winSize <= box.maxX + 1; wx += step) {
+        var filled = 0;
+        var total = winSize * winSize;
+        for (var yy = 0; yy < winSize; yy++) {
+          for (var xx = 0; xx < winSize; xx++) {
+            if (binary[(wy + yy) * W + (wx + xx)]) filled++;
+          }
+        }
+        if (filled / total > 0.7) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function dilate(binary, W, H, radius) {
+    var out = new Uint8Array(W * H);
+    var tmp = new Uint8Array(W * H);
+    var y, x, k, nx, ny;
+    for (y = 0; y < H; y++) {
+      for (x = 0; x < W; x++) {
+        if (binary[y * W + x]) {
+          for (k = -radius; k <= radius; k++) {
+            nx = x + k;
+            if (nx >= 0 && nx < W) tmp[y * W + nx] = 1;
+          }
+        }
+      }
+    }
+    for (y = 0; y < H; y++) {
+      for (x = 0; x < W; x++) {
+        if (tmp[y * W + x]) {
+          for (k = -radius; k <= radius; k++) {
+            ny = y + k;
+            if (ny >= 0 && ny < H) out[ny * W + x] = 1;
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  function connectedComponents(binary, labels, W, H) {
+    var label = 0;
+    var queue = new Int32Array(W * H);
+    var qHead, qTail;
+    var dx = [-1, 0, 1, -1, 1, -1, 0, 1];
+    var dy = [-1, -1, -1, 0, 0, 1, 1, 1];
+
+    for (var i = 0; i < W * H; i++) labels[i] = 0;
+
+    for (var start = 0; start < W * H; start++) {
+      if (binary[start] && labels[start] === 0) {
+        label++;
+        qHead = 0;
+        qTail = 0;
+        queue[qTail++] = start;
+        labels[start] = label;
+        while (qHead < qTail) {
+          var cur = queue[qHead++];
+          var cy = Math.floor(cur / W);
+          var cx = cur % W;
+          for (var d = 0; d < 8; d++) {
+            var ny = cy + dy[d];
+            var nx = cx + dx[d];
+            if (ny >= 0 && ny < H && nx >= 0 && nx < W) {
+              var ni = ny * W + nx;
+              if (binary[ni] && labels[ni] === 0) {
+                labels[ni] = label;
+                queue[qTail++] = ni;
+              }
+            }
+          }
+        }
+      }
+    }
+    return label;
+  }
+
+  function cropCanvas(srcCanvas, x, y, w, h) {
+    var out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    out.getContext('2d').drawImage(srcCanvas, x, y, w, h, 0, 0, w, h);
+    return out;
+  }
+
+  function canvasToScaledDataURL(canvas, maxSize, quality) {
+    var w = canvas.width;
+    var h = canvas.height;
+    var scale = Math.min(1, maxSize / Math.max(w, h));
+    if (scale >= 1) {
+      return canvas.toDataURL('image/jpeg', quality);
+    }
+    var out = document.createElement('canvas');
+    out.width = Math.round(w * scale);
+    out.height = Math.round(h * scale);
+    out.getContext('2d').drawImage(canvas, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', quality);
+  }
+
+  // ========== UI 工具 ==========
+
   function showLoading(text) {
     $('loading-text').textContent = text || '处理中…';
-    $('progress-bar').style.width = '0%';
-    $('loading').classList.remove('hidden');
+    $('loading-mask').classList.remove('hidden');
+    setProgress(0);
   }
-  function updateProgress(cur, total, text) {
-    var pct = total > 0 ? Math.round(cur / total * 100) : 0;
-    $('progress-bar').style.width = pct + '%';
-    if (text) $('loading-text').textContent = text;
-  }
+
   function hideLoading() {
-    $('loading').classList.add('hidden');
+    $('loading-mask').classList.add('hidden');
   }
-  function escapeHtml(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  function setProgress(p) {
+    $('progress-bar').style.width = Math.round(p * 100) + '%';
   }
+
   function formatSize(bytes) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / 1024 / 1024).toFixed(2) + ' MB';
   }
 
-  var vendorModalCallback = null;
-  function askVendorName(title, cb) {
-    $('vendor-modal-title').textContent = title || '输入厂家名称';
-    $('vendor-modal-input').value = '';
-    $('vendor-modal').classList.remove('hidden');
-    vendorModalCallback = cb;
-    setTimeout(function() {
-      $('vendor-modal-input').focus();
-    }, 100);
-  }
-  $('vendor-modal-ok').addEventListener('click', function () {
-    var name = $('vendor-modal-input').value.trim();
-    $('vendor-modal').classList.add('hidden');
-    if (vendorModalCallback) vendorModalCallback(name);
-    vendorModalCallback = null;
-  });
-  $('vendor-modal-cancel').addEventListener('click', function () {
-    $('vendor-modal').classList.add('hidden');
-    if (vendorModalCallback) vendorModalCallback(null);
-    vendorModalCallback = null;
-  });
-
   var tabs = document.querySelectorAll('.tabbar .tab');
   for (var ti = 0; ti < tabs.length; ti++) {
     (function (tab) {
       tab.addEventListener('click', function () {
-        var page = tab.getAttribute('data-page');
         for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
         tab.classList.add('active');
-        if (page === 'search') {
-          $('page-search').classList.remove('hidden');
-          $('page-lib').classList.add('hidden');
-        } else {
-          $('page-search').classList.add('hidden');
-          $('page-lib').classList.remove('hidden');
-          renderLib();
-        }
+        var name = tab.dataset.tab;
+        $('tab-search').classList.toggle('hidden', name !== 'search');
+        $('tab-lib').classList.toggle('hidden', name !== 'lib');
+        if (name === 'lib') refreshLib();
       });
     })(tabs[ti]);
   }
 
-  var currentVendorFilter = '';
-  $('vendor-filter').addEventListener('change', function () {
-    currentVendorFilter = this.value;
-    renderLib();
-  });
+  var vendorCallback = null;
 
-  function updateVendorFilterOptions(list) {
-    var sel = $('vendor-filter');
-    var currentVal = sel.value;
-    var vendors = {};
-    for (var i = 0; i < list.length; i++) {
-      var v = list[i].vendor || '';
-      vendors[v] = true;
-    }
-    sel.innerHTML = '<option value="">全部厂家</option>';
-    var keys = Object.keys(vendors).sort();
-    var hasEmpty = false;
-    for (var j = 0; j < keys.length; j++) {
-      if (keys[j] === '') { hasEmpty = true; continue; }
-      var opt = document.createElement('option');
-      opt.value = keys[j];
-      opt.textContent = keys[j];
-      sel.appendChild(opt);
-    }
-    if (hasEmpty) {
-      var opt2 = document.createElement('option');
-      opt2.value = '__none__';
-      opt2.textContent = '（未分类）';
-      sel.appendChild(opt2);
-    }
-    if (currentVal) sel.value = currentVal;
+  function askVendorName(title, cb) {
+    $('vendor-modal-title').textContent = title;
+    $('vendor-modal-input').value = '';
+    $('vendor-modal').classList.remove('hidden');
+    vendorCallback = cb;
+    setTimeout(function () { $('vendor-modal-input').focus(); }, 100);
   }
 
-  function matchVendor(itemVendor, filterVal) {
-    if (!filterVal) return true;
-    if (filterVal === '__none__') return !itemVendor;
-    return itemVendor === filterVal;
-  }
-
-  function renderLib() {
-    getAllImages(function (list) {
-      updateVendorFilterOptions(list);
-
-      var totalSize = 0;
-      for (var k = 0; k < list.length; k++) {
-        var item0 = list[k];
-        if (item0.thumb) totalSize += item0.thumb.length;
-        if (item0.medium) totalSize += item0.medium.length;
-      }
-      totalSize = Math.round(totalSize * 0.75);
-      $('lib-count').textContent = list.length;
-      $('lib-size').textContent = formatSize(totalSize);
-
-      var filtered = [];
-      for (var m = 0; m < list.length; m++) {
-        if (matchVendor(list[m].vendor, currentVendorFilter)) {
-          filtered.push(list[m]);
-        }
-      }
-
-      var grid = $('lib-grid');
-      grid.innerHTML = '';
-      if (!filtered.length) {
-        $('lib-empty').classList.remove('hidden');
-        $('lib-empty').textContent = list.length ? '当前厂家分类下暂无图片' : '资料库为空，点击上方按钮批量导入';
-        return;
-      }
-      $('lib-empty').classList.add('hidden');
-      filtered.sort(function (a, b) { return b.id - a.id; });
-      for (var i = 0; i < filtered.length; i++) {
-        (function (item) {
-          var div = document.createElement('div');
-          div.className = 'lib-item';
-          var img = document.createElement('img');
-          img.src = item.thumb;
-          img.alt = item.name || '';
-          img.addEventListener('click', function () {
-            $('preview-img').src = item.medium || item.thumb;
-            $('preview').classList.remove('hidden');
-          });
-          var del = document.createElement('button');
-          del.className = 'lib-del';
-          del.innerHTML = '×';
-          del.addEventListener('click', function (ev) {
-            ev.stopPropagation();
-            if (!confirm('确定删除这张图片？')) return;
-            deleteImage(item.id, function () { renderLib(); });
-          });
-          div.appendChild(img);
-          div.appendChild(del);
-          if (item.vendor) {
-            var vtag = document.createElement('div');
-            vtag.className = 'lib-vendor-tag';
-            vtag.textContent = item.vendor;
-            div.appendChild(vtag);
-          }
-          grid.appendChild(div);
-        })(filtered[i]);
-      }
-    });
-  }
-
-  $('btn-clear-lib').addEventListener('click', function () {
-    if (!confirm('确定清空整个资料库？此操作不可恢复')) return;
-    clearImages(function () {
-      currentVendorFilter = '';
-      $('vendor-filter').value = '';
-      renderLib();
-    });
+  $('vendor-modal-ok').addEventListener('click', function () {
+    var v = $('vendor-modal-input').value.trim();
+    $('vendor-modal').classList.add('hidden');
+    if (vendorCallback) vendorCallback(v);
+    vendorCallback = null;
   });
 
-  $('btn-add-lib').addEventListener('click', function () {
-    askVendorName('批量导入图片 - 输入厂家名称', function (vendor) {
-      if (vendor === null) return;
-      $('file-lib').dataset.vendor = vendor;
-      $('file-lib').click();
-    });
+  $('vendor-modal-cancel').addEventListener('click', function () {
+    $('vendor-modal').classList.add('hidden');
+    if (vendorCallback) vendorCallback(null);
+    vendorCallback = null;
   });
-  $('file-lib').addEventListener('change', function (e) {
-    var files = e.target.files;
-    if (!files || !files.length) return;
-    var vendor = e.target.dataset.vendor || '';
-    var list = [];
-    for (var i = 0; i < files.length; i++) list.push(files[i]);
+
+  $('btn-pick-query').addEventListener('click', function () {
+    $('file-query').click();
+  });
+
+  $('file-query').addEventListener('change', function (e) {
+    var file = e.target.files && e.target.files[0];
     e.target.value = '';
-    showLoading('正在导入 0 / ' + list.length);
-    var done = 0, success = 0;
-    function next() {
-      if (done >= list.length) {
-        hideLoading();
-        alert('导入完成：成功 ' + success + ' 张，失败 ' + (list.length - success) + ' 张');
-        renderLib();
-        return;
-      }
-      var file = list[done];
-      updateProgress(done, list.length, '正在导入 ' + (done + 1) + ' / ' + list.length);
-      fileToImage(file, function (img) {
-        if (!img) {
-          done++;
-          setTimeout(next, 0);
-          return;
-        }
-        computeAllFeatures(img, function (feats) {
-          if (!feats) {
-            done++;
-            setTimeout(next, 0);
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var dataURL = ev.target.result;
+      $('query-preview-img').src = dataURL;
+      $('query-preview-wrap').classList.remove('hidden');
+      showLoading('正在分析图片…');
+      loadImage(dataURL, function (img) {
+        var query = {
+          ahash: aHash(img),
+          dhash: dHash(img),
+          phash: pHash(img),
+          color: colorHistogram(img)
+        };
+        dbGetAll(function (items) {
+          hideLoading();
+          if (!items.length) {
+            $('result-section').classList.add('hidden');
+            $('search-empty').classList.remove('hidden');
             return;
           }
-          var thumb = makeResized(img, 400, 0.75);
-          var medium = makeResized(img, 1200, 0.82);
-          addImage({
-            name: file.name,
-            vendor: vendor,
-            ahash: feats.ahash,
-            dhash: feats.dhash,
-            phash: feats.phash,
-            color: feats.color,
-            thumb: thumb,
-            medium: medium,
-            source: 'image',
-            ts: Date.now()
-          }, function () {
-            success++;
-            done++;
-            setTimeout(next, 0);
-          });
+          var results = [];
+          for (var i = 0; i < items.length; i++) {
+            var sim = computeSimilarity(query, items[i]);
+            if (sim >= 0.55) {
+              results.push({ item: items[i], sim: sim });
+            }
+          }
+          results.sort(function (a, b) { return b.sim - a.sim; });
+          results = results.slice(0, 20);
+          renderResults(results);
         });
       });
-    }
-    next();
+    };
+    reader.readAsDataURL(file);
   });
 
+  function renderResults(results) {
+    $('search-empty').classList.add('hidden');
+    $('result-section').classList.remove('hidden');
+    var html = '';
+    for (var i = 0; i < results.length; i++) {
+      var r = results[i];
+      var sim = Math.round(r.sim * 100);
+      var cls = 'sim-low';
+      var label = '可能相似';
+      if (sim >= 92) { cls = 'sim-high'; label = '极相似'; }
+      else if (sim >= 78) { cls = 'sim-high'; label = '相似'; }
+      else if (sim >= 65) { cls = 'sim-mid'; label = '可能相似'; }
+      else { cls = 'sim-low'; label = '低相似'; }
+      html += '<div class="result-item" data-id="' + r.item.id + '">' +
+        '<img src="' + r.item.thumb + '" alt="">' +
+        '<div class="result-info">' +
+        '<span class="similarity ' + cls + '">' + sim + '%</span>' +
+        '<span class="tag">' + label + '</span>' +
+        (r.item.vendor ? '<span class="tag tag-vendor">' + escapeHtml(r.item.vendor) + '</span>' : '') +
+        '<div style="color:#888;font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(r.item.name || '') + '</div>' +
+        '</div>' +
+        '</div>';
+    }
+    if (!html) {
+      html = '<div class="empty-tip" style="grid-column:1/-1">未找到相似度达标的图片</div>';
+    }
+    $('result-list').innerHTML = html;
+
+    var items = $('result-list').querySelectorAll('.result-item');
+    for (var j = 0; j < items.length; j++) {
+      (function (el) {
+        el.addEventListener('click', function () {
+          var id = parseInt(el.dataset.id, 10);
+          showBigImage(id);
+        });
+      })(items[j]);
+    }
+  }
+
+  function showBigImage(id) {
+    dbGetAll(function (items) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].id === id) {
+          $('preview-img').src = items[i].medium || items[i].thumb;
+          $('preview-mask').classList.remove('hidden');
+          return;
+        }
+      }
+    });
+  }
+
+  $('preview-mask').addEventListener('click', function () {
+    $('preview-mask').classList.add('hidden');
+  });
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function refreshLib() {
+    dbGetAll(function (items) {
+      var totalSize = 0;
+      for (var i = 0; i < items.length; i++) {
+        totalSize += (items[i].thumb || '').length + (items[i].medium || '').length;
+      }
+      $('stat-count').textContent = items.length;
+      $('stat-size').textContent = formatSize(totalSize);
+
+      var vendors = {};
+      for (var j = 0; j < items.length; j++) {
+        if (items[j].vendor) vendors[items[j].vendor] = true;
+      }
+      var currentVendor = $('vendor-filter').value;
+      var options = '<option value="">全部厂家</option>';
+      var vendorList = Object.keys(vendors).sort();
+      for (var k = 0; k < vendorList.length; k++) {
+        var sel = vendorList[k] === currentVendor ? ' selected' : '';
+        options += '<option value="' + escapeHtml(vendorList[k]) + '"' + sel + '>' + escapeHtml(vendorList[k]) + '</option>';
+      }
+      $('vendor-filter').innerHTML = options;
+
+      renderLibList(items);
+    });
+  }
+
+  function renderLibList(items) {
+    var filter = $('vendor-filter').value;
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (filter && item.vendor !== filter) continue;
+      html += '<div class="lib-item" data-id="' + item.id + '">' +
+        '<img src="' + item.thumb + '" alt="">' +
+        '<button class="lib-del" data-id="' + item.id + '">✕</button>' +
+        (item.vendor ? '<div class="lib-vendor-tag">' + escapeHtml(item.vendor) + '</div>' : '') +
+        '</div>';
+    }
+    $('lib-list').innerHTML = html;
+    $('lib-empty').style.display = html ? 'none' : 'block';
+
+    var dels = $('lib-list').querySelectorAll('.lib-del');
+    for (var d = 0; d < dels.length; d++) {
+      (function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (!confirm('确认删除该图片？')) return;
+          dbDelete(parseInt(btn.dataset.id, 10), function () {
+            refreshLib();
+          });
+        });
+      })(dels[d]);
+    }
+
+    var imgs = $('lib-list').querySelectorAll('.lib-item');
+    for (var m = 0; m < imgs.length; m++) {
+      (function (el) {
+        el.addEventListener('click', function () {
+          var id = parseInt(el.dataset.id, 10);
+          showBigImage(id);
+        });
+      })(imgs[m]);
+    }
+  }
+
+  $('vendor-filter').addEventListener('change', function () {
+    dbGetAll(renderLibList);
+  });
+
+  $('btn-clear-lib').addEventListener('click', function () {
+    if (!confirm('确认清空资料库？此操作不可恢复')) return;
+    dbClear(function () {
+      refreshLib();
+      alert('已清空');
+    });
+  });
+
+  $('btn-import-images').addEventListener('click', function () {
+    askVendorName('批量导入图片 - 输入厂家名称', function (vendor) {
+      if (vendor === null) return;
+      $('file-images').dataset.vendor = vendor || '';
+      $('file-images').click();
+    });
+  });
+
+  $('file-images').addEventListener('change', function (e) {
+    var files = e.target.files;
+    e.target.value = '';
+    if (!files || !files.length) return;
+    var vendor = e.target.dataset.vendor || '';
+    var fileArr = [];
+    for (var i = 0; i < files.length; i++) fileArr.push(files[i]);
+
+    showLoading('正在导入 0/' + fileArr.length);
+    var done = 0;
+
+    function processNext() {
+      if (done >= fileArr.length) {
+        hideLoading();
+        refreshLib();
+        alert('导入完成，共 ' + fileArr.length + ' 张');
+        return;
+      }
+      var file = fileArr[done];
+      var reader = new FileReader();
+      reader.onload = function (ev) {
+        loadImage(ev.target.result, function (img) {
+          var record = {
+            name: file.name,
+            vendor: vendor,
+            ahash: aHash(img),
+            dhash: dHash(img),
+            phash: pHash(img),
+            color: colorHistogram(img),
+            thumb: makeThumb(img, 400),
+            medium: makeThumb(img, 1200),
+            source: 'image',
+            ts: Date.now()
+          };
+          dbAdd(record, function () {
+            done++;
+            $('loading-text').textContent = '正在导入 ' + done + '/' + fileArr.length;
+            setProgress(done / fileArr.length);
+            processNext();
+          });
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+    processNext();
+  });
+
+  // ========== PDF 导入 ==========
+
   var pdfPages = [];
+  var pdfDocRef = null;
+  var pdfVendor = '';
+  var splitEnabled = true;
+
+  $('toggle-split').addEventListener('click', function () {
+    splitEnabled = !splitEnabled;
+    $('toggle-split').classList.toggle('on', splitEnabled);
+  });
 
   $('btn-import-pdf').addEventListener('click', function () {
     if (!window.pdfjsLib) {
-      if (window.__pdfFailed) {
-        alert('PDF 解析库加载失败，请检查网络后刷新页面重试');
-      } else {
-        alert('PDF 解析库正在加载中，请稍候几秒后再点击');
-      }
+      alert('PDF 解析库未加载。\n请确认 pdf.min.js 和 pdf.worker.min.js 已上传到仓库根目录，跟 index.html 同级。');
       return;
     }
     askVendorName('导入 PDF 图册 - 输入厂家名称', function (vendor) {
@@ -1071,7 +1315,7 @@
         alert('PDF 图册必须填写厂家名称，方便后续管理');
         return;
       }
-      $('file-pdf').dataset.vendor = vendor;
+      pdfVendor = vendor;
       $('file-pdf').click();
     });
   });
@@ -1080,16 +1324,16 @@
     var file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    var vendor = e.target.dataset.vendor || '';
+
     showLoading('正在读取 PDF 文件…');
 
     var reader = new FileReader();
     reader.onload = function (ev) {
       var typedArray = new Uint8Array(ev.target.result);
       pdfjsLib.getDocument(typedArray).promise.then(function (pdf) {
+        pdfDocRef = pdf;
         var numPages = pdf.numPages;
         pdfPages = [];
-        var done = 0;
 
         function renderPage(pageNum) {
           if (pageNum > numPages) {
@@ -1098,277 +1342,233 @@
               alert('PDF 解析完成，但未提取到任何页面');
               return;
             }
-            showPdfPicker(vendor, file.name);
+            openPdfPicker(pdfVendor);
             return;
           }
-          updateProgress(done, numPages, '解析 PDF 页面 ' + done + ' / ' + numPages);
+          $('loading-text').textContent = '正在渲染页面 ' + pageNum + '/' + numPages;
+          setProgress(pageNum / numPages);
           pdf.getPage(pageNum).then(function (page) {
-            var viewport = page.getViewport({ scale: 1 });
-            var targetWidth = 1200;
-            var scale = targetWidth / viewport.width;
-            var scaledViewport = page.getViewport({ scale: scale });
+            var viewport = page.getViewport({ scale: 1.5 });
             var canvas = document.createElement('canvas');
-            canvas.width = Math.round(scaledViewport.width);
-            canvas.height = Math.round(scaledViewport.height);
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
             var ctx = canvas.getContext('2d');
-            page.render({ canvasContext: ctx, viewport: scaledViewport }).promise.then(function () {
-              var full = canvas.toDataURL('image/jpeg', 0.82);
+            page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function () {
               var thumbCanvas = document.createElement('canvas');
-              var thumbScale = 400 / canvas.width;
-              thumbCanvas.width = 400;
-              thumbCanvas.height = Math.round(canvas.height * thumbScale);
+              var thumbScale = 200 / viewport.width;
+              thumbCanvas.width = 200;
+              thumbCanvas.height = Math.round(viewport.height * thumbScale);
               thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
-              var thumb = thumbCanvas.toDataURL('image/jpeg', 0.75);
               pdfPages.push({
                 pageNum: pageNum,
-                thumb: thumb,
-                full: full,
-                selected: true
+                canvas: canvas,
+                thumb: thumbCanvas.toDataURL('image/jpeg', 0.7)
               });
-              done++;
-              setTimeout(function () { renderPage(pageNum + 1); }, 0);
-            }).catch(function () {
-              done++;
-              setTimeout(function () { renderPage(pageNum + 1); }, 0);
+              renderPage(pageNum + 1);
             });
-          }).catch(function () {
-            done++;
-            setTimeout(function () { renderPage(pageNum + 1); }, 0);
+          })['catch'](function () {
+            renderPage(pageNum + 1);
           });
         }
         renderPage(1);
-      }).catch(function (err) {
+      })['catch'](function (err) {
         hideLoading();
-        alert('PDF 打开失败：' + (err && err.message ? err.message : '文件可能已损坏'));
+        alert('PDF 解析失败：' + (err && err.message ? err.message : '文件可能损坏'));
       });
-    };
-    reader.onerror = function () {
-      hideLoading();
-      alert('PDF 文件读取失败');
     };
     reader.readAsArrayBuffer(file);
   });
 
-  function showPdfPicker(vendor, fileName) {
-    $('pdf-vendor-display').textContent = vendor || '-';
-    $('pdf-page-total').textContent = '共 ' + pdfPages.length + ' 页';
-    renderPdfPickerGrid();
+  function openPdfPicker(vendor) {
+    $('pdf-vendor-name').textContent = vendor;
+    $('pdf-total-pages').textContent = pdfPages.length;
     $('pdf-picker').classList.remove('hidden');
-  }
-
-  function renderPdfPickerGrid() {
-    var grid = $('pdf-picker-grid');
-    grid.innerHTML = '';
+    var html = '';
     for (var i = 0; i < pdfPages.length; i++) {
-      (function (page) {
-        var div = document.createElement('div');
-        div.className = 'pdf-page-item' + (page.selected ? ' selected' : '');
-        var img = document.createElement('img');
-        img.src = page.thumb;
-        var pageNumTag = document.createElement('div');
-        pageNumTag.className = 'page-num';
-        pageNumTag.textContent = 'P' + page.pageNum;
-        var checkMark = document.createElement('div');
-        checkMark.className = 'check-mark';
-        checkMark.textContent = '✓';
-        div.appendChild(img);
-        div.appendChild(pageNumTag);
-        div.appendChild(checkMark);
-        div.addEventListener('click', function () {
-          page.selected = !page.selected;
-          div.classList.toggle('selected', page.selected);
-          updatePdfSelectedCount();
+      html += '<div class="pdf-page-item selected" data-idx="' + i + '">' +
+        '<img src="' + pdfPages[i].thumb + '" alt="">' +
+        '<div class="page-num">P' + pdfPages[i].pageNum + '</div>' +
+        '<div class="check-mark">✓</div>' +
+        '</div>';
+    }
+    $('pdf-picker-grid').innerHTML = html;
+    updateSelectedCount();
+
+    var items = $('pdf-picker-grid').querySelectorAll('.pdf-page-item');
+    for (var j = 0; j < items.length; j++) {
+      (function (el) {
+        el.addEventListener('click', function () {
+          el.classList.toggle('selected');
+          updateSelectedCount();
         });
-        grid.appendChild(div);
-      })(pdfPages[i]);
+      })(items[j]);
     }
-    updatePdfSelectedCount();
   }
 
-  function updatePdfSelectedCount() {
-    var count = 0;
-    for (var i = 0; i < pdfPages.length; i++) {
-      if (pdfPages[i].selected) count++;
-    }
-    $('pdf-selected-count').textContent = '已选 ' + count + ' 页';
+  function updateSelectedCount() {
+    var selected = $('pdf-picker-grid').querySelectorAll('.pdf-page-item.selected').length;
+    $('pdf-selected-count').textContent = selected;
   }
 
   $('pdf-select-all').addEventListener('click', function () {
-    for (var i = 0; i < pdfPages.length; i++) pdfPages[i].selected = true;
-    renderPdfPickerGrid();
+    var items = $('pdf-picker-grid').querySelectorAll('.pdf-page-item');
+    for (var i = 0; i < items.length; i++) items[i].classList.add('selected');
+    updateSelectedCount();
   });
+
   $('pdf-select-none').addEventListener('click', function () {
-    for (var i = 0; i < pdfPages.length; i++) pdfPages[i].selected = false;
-    renderPdfPickerGrid();
+    var items = $('pdf-picker-grid').querySelectorAll('.pdf-page-item');
+    for (var i = 0; i < items.length; i++) items[i].classList.remove('selected');
+    updateSelectedCount();
   });
+
   $('pdf-select-invert').addEventListener('click', function () {
-    for (var i = 0; i < pdfPages.length; i++) pdfPages[i].selected = !pdfPages[i].selected;
-    renderPdfPickerGrid();
+    var items = $('pdf-picker-grid').querySelectorAll('.pdf-page-item');
+    for (var i = 0; i < items.length; i++) items[i].classList.toggle('selected');
+    updateSelectedCount();
   });
 
   $('pdf-picker-close').addEventListener('click', function () {
-    if (!confirm('确定取消导入？已解析的页面将被丢弃')) return;
     $('pdf-picker').classList.add('hidden');
     pdfPages = [];
+    pdfDocRef = null;
   });
 
-  $('pdf-confirm-import').addEventListener('click', function () {
-    var selected = [];
-    for (var i = 0; i < pdfPages.length; i++) {
-      if (pdfPages[i].selected) selected.push(pdfPages[i]);
-    }
-    if (!selected.length) {
+  $('pdf-import-confirm').addEventListener('click', function () {
+    var selectedEls = $('pdf-picker-grid').querySelectorAll('.pdf-page-item.selected');
+    if (!selectedEls.length) {
       alert('请至少选择一页');
       return;
     }
-    var vendor = $('pdf-vendor-display').textContent;
-    if (vendor === '-') vendor = '';
+    var indices = [];
+    for (var i = 0; i < selectedEls.length; i++) {
+      indices.push(parseInt(selectedEls[i].dataset.idx, 10));
+    }
     $('pdf-picker').classList.add('hidden');
+    startPdfImport(indices, pdfVendor);
+  });
 
-    showLoading('正在入库 0 / ' + selected.length);
-    var done = 0, success = 0;
-    function next() {
-      if (done >= selected.length) {
+  function startPdfImport(indices, vendor) {
+    var total = indices.length;
+    var processed = 0;
+    var savedCount = 0;
+    var splitStats = { pagesSplit: 0, totalBlocks: 0, pagesFull: 0 };
+
+    showLoading('正在导入 0/' + total);
+
+    function processNext() {
+      if (processed >= total) {
         hideLoading();
-        alert('导入完成：成功 ' + success + ' 张，失败 ' + (selected.length - success) + ' 张');
+        refreshLib();
+        var msg = '导入完成\n共 ' + total + ' 页，保存 ' + savedCount + ' 条记录';
+        if (splitEnabled) {
+          msg += '\n\n智能拆分：\n· ' + splitStats.pagesSplit + ' 页拆出 ' + splitStats.totalBlocks + ' 个产品块\n· ' + splitStats.pagesFull + ' 页保持整页';
+        }
+        alert(msg);
         pdfPages = [];
-        renderLib();
+        pdfDocRef = null;
         return;
       }
-      var page = selected[done];
-      updateProgress(done, selected.length, '正在入库 ' + (done + 1) + ' / ' + selected.length);
-      dataUrlToImage(page.full, function (img) {
-        if (!img) {
-          done++;
-          setTimeout(next, 0);
-          return;
-        }
-        computeAllFeatures(img, function (feats) {
-          if (!feats) {
-            done++;
-            setTimeout(next, 0);
-            return;
-          }
-          addImage({
-            name: 'P' + page.pageNum,
-            vendor: vendor,
-            ahash: feats.ahash,
-            dhash: feats.dhash,
-            phash: feats.phash,
-            color: feats.color,
-            thumb: page.thumb,
-            medium: page.full,
-            source: 'pdf',
-            pageNum: page.pageNum,
-            ts: Date.now()
-          }, function () {
-            success++;
-            done++;
-            setTimeout(next, 0);
-          });
-        });
-      });
-    }
-    next();
-  });
 
-  $('btn-pick-query').addEventListener('click', function () {
-    $('file-query').click();
-  });
-  $('file-query').addEventListener('change', function (e) {
-    var file = e.target.files && e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    fileToImage(file, function (img, dataUrl) {
-      if (!img) {
-        alert('图片读取失败，请换一张试试');
+      var idx = indices[processed];
+      var pageObj = pdfPages[idx];
+      $('loading-text').textContent = '正在处理第 ' + (processed + 1) + '/' + total + ' 页（P' + pageObj.pageNum + '）';
+      setProgress(processed / total);
+
+      if (!splitEnabled) {
+        savePageAsOne(pageObj, vendor, function () {
+          savedCount++;
+          processed++;
+          processNext();
+        });
         return;
       }
-      $('query-img').src = dataUrl;
-      $('query-card').classList.remove('hidden');
-      showLoading('正在分析图片特征…');
-      computeAllFeatures(img, function (queryFeats) {
-        if (!queryFeats) {
-          hideLoading();
-          alert('图片特征提取失败');
-          return;
-        }
-        getAllImages(function (list) {
-          hideLoading();
-          if (!list.length) {
-            $('result-area').classList.add('hidden');
-            $('search-empty').classList.remove('hidden');
-            return;
-          }
-          $('search-empty').classList.add('hidden');
-          var results = [];
-          for (var i = 0; i < list.length; i++) {
-            var sim = computeSimilarity(queryFeats, list[i]);
-            results.push({
-              id: list[i].id,
-              name: list[i].name,
-              vendor: list[i].vendor,
-              thumb: list[i].thumb,
-              medium: list[i].medium,
-              sim: sim
-            });
-          }
-          results.sort(function (a, b) { return b.sim - a.sim; });
-          var filtered = [];
-          for (var j = 0; j < results.length && filtered.length < 20; j++) {
-            if (results[j].sim >= 55) filtered.push(results[j]);
-          }
-          renderResults(filtered);
-        });
-      });
-    });
-  });
 
-  function renderResults(list) {
-    $('result-area').classList.remove('hidden');
-    var grid = $('result-grid');
-    grid.innerHTML = '';
-    if (!list.length) {
-      grid.innerHTML = '<div class="empty-tip" style="grid-column:1/-1;">未找到相似图片</div>';
-      return;
-    }
-    for (var i = 0; i < list.length; i++) {
-      (function (item) {
-        var div = document.createElement('div');
-        div.className = 'result-item';
-        var img = document.createElement('img');
-        img.src = item.thumb;
-        img.alt = '';
-        img.addEventListener('click', function () {
-          $('preview-img').src = item.medium || item.thumb;
-          $('preview').classList.remove('hidden');
+      var blocks;
+      try {
+        blocks = detectProductBlocks(pageObj.canvas);
+      } catch (err) {
+        blocks = [];
+      }
+
+      if (!blocks.length) {
+        splitStats.pagesFull++;
+        savePageAsOne(pageObj, vendor, function () {
+          savedCount++;
+          processed++;
+          processNext();
         });
-        var info = document.createElement('div');
-        info.className = 'result-info';
-        var simClass = 'sim-low';
-        var tagText = '不太像';
-        if (item.sim >= 92) { simClass = 'sim-high'; tagText = '极相似'; }
-        else if (item.sim >= 78) { simClass = 'sim-high'; tagText = '相似'; }
-        else if (item.sim >= 65) { simClass = 'sim-mid'; tagText = '可能相似'; }
-        var vendorHtml = item.vendor ? '<span class="tag tag-vendor">' + escapeHtml(item.vendor) + '</span>' : '';
-        info.innerHTML = '<span class="similarity ' + simClass + '">' + item.sim + '%</span>' +
-                         '<span class="tag">' + tagText + '</span>' + vendorHtml +
-                         '<div style="color:#999;font-size:12px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(item.name || '未命名') + '</div>';
-        div.appendChild(img);
-        div.appendChild(info);
-        grid.appendChild(div);
-      })(list[i]);
+      } else {
+        splitStats.pagesSplit++;
+        splitStats.totalBlocks += blocks.length;
+        saveBlocksSequentially(pageObj, blocks, vendor, 0, function () {
+          savedCount += blocks.length;
+          processed++;
+          processNext();
+        });
+      }
     }
+
+    processNext();
   }
 
-  $('preview').addEventListener('click', function () {
-    $('preview').classList.add('hidden');
-  });
+  function savePageAsOne(pageObj, vendor, cb) {
+    var img = new Image();
+    img.onload = function () {
+      var record = {
+        name: 'P' + pageObj.pageNum,
+        vendor: vendor,
+        ahash: aHash(img),
+        dhash: dHash(img),
+        phash: pHash(img),
+        color: colorHistogram(img),
+        thumb: canvasToScaledDataURL(pageObj.canvas, 400, 0.8),
+        medium: canvasToScaledDataURL(pageObj.canvas, 1200, 0.85),
+        source: 'pdf',
+        pageNum: pageObj.pageNum,
+        ts: Date.now()
+      };
+      dbAdd(record, cb);
+    };
+    img.src = canvasToScaledDataURL(pageObj.canvas, 400, 0.8);
+  }
+
+  function saveBlocksSequentially(pageObj, blocks, vendor, blockIdx, cb) {
+    if (blockIdx >= blocks.length) {
+      cb();
+      return;
+    }
+    var b = blocks[blockIdx];
+    var blockCanvas = cropCanvas(pageObj.canvas, b.x, b.y, b.w, b.h);
+    var img = new Image();
+    img.onload = function () {
+      var record = {
+        name: 'P' + pageObj.pageNum + '-' + (blockIdx + 1),
+        vendor: vendor,
+        ahash: aHash(img),
+        dhash: dHash(img),
+        phash: pHash(img),
+        color: colorHistogram(img),
+        thumb: canvasToScaledDataURL(blockCanvas, 400, 0.8),
+        medium: canvasToScaledDataURL(blockCanvas, 1200, 0.85),
+        source: 'pdf',
+        pageNum: pageObj.pageNum,
+        blockIdx: blockIdx,
+        ts: Date.now()
+      };
+      dbAdd(record, function () {
+        saveBlocksSequentially(pageObj, blocks, vendor, blockIdx + 1, cb);
+      });
+    };
+    img.src = canvasToScaledDataURL(blockCanvas, 400, 0.8);
+  }
 
   openDB(function () {
-    renderLib();
+    refreshLib();
   });
+
 })();
 </script>
+
 </body>
 </html>
