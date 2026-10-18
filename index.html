@@ -98,7 +98,7 @@ if (window.pdfjsLib) {
 </head>
 <body>
 
-<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v11</span></div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v12</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -175,7 +175,7 @@ if (window.pdfjsLib) {
   <div class="toggle-row">
     <div>
       <div class="toggle-label">智能拆分产品块</div>
-      <div class="toggle-desc">blackMask 扫描规格文字，绿色型号不再被误判</div>
+      <div class="toggle-desc">遇到下一个型号立即停止+过滤纯文字块</div>
     </div>
     <div class="toggle-switch on" id="toggle-split"></div>
   </div>
@@ -392,10 +392,7 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== v11：blackMask 扫描规格，绿色型号不再被误判 ==========
-  // 关键修复：specBottom 扫描用 blackMask（不含绿色），
-  // 这样遇到下一个绿色型号文字时，blackMask 显示"无内容"，
-  // 规格文字正确结束，不会包含下一个产品
+  // ========== v12：型号锚点 + 遇到下一个型号立即停止 + 过滤纯文字块 ==========
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -421,14 +418,13 @@ if (window.pdfjsLib) {
       var isGreen = (g > 80 && g > r + 15 && g > b + 10);
       if (isGreen) greenMask[i] = 1;
 
-      // blackMask：深色但不是绿色（避免规格扫描时把绿色型号当作黑色内容）
       var gray = (r * 299 + g * 587 + b * 114) / 1000;
       if (gray < 200 && !isGreen) {
         blackMask[i] = 1;
       }
     }
 
-    // Y 投影找型号行（用 greenMask）
+    // Y 投影找型号行
     var greenY = new Uint32Array(H);
     for (var y = 0; y < H; y++) {
       for (var x = 0; x < W; x++) {
@@ -493,7 +489,6 @@ if (window.pdfjsLib) {
 
     if (!allModelCells.length) return [];
 
-    // 计算中心
     for (var ci2 = 0; ci2 < allModelCells.length; ci2++) {
       var c = allModelCells[ci2];
       c.cx = (c.x0 + c.x1) / 2;
@@ -529,8 +524,7 @@ if (window.pdfjsLib) {
       rows[ri2].sort(function (a, b) { return a.cx - b.cx; });
     }
 
-    // === 用 blackMask 向下扫描规格文字实际结束位置 ===
-    // 关键：blackMask 不含绿色，所以下一个绿色型号文字不会被误判为"还有内容"
+    // === v12 关键：specBottom 扫描时遇到绿色立即停止 ===
     function findSpecBottom(cell) {
       var x0 = Math.max(0, cell.x0 - 10);
       var x1 = Math.min(W, cell.x1 + 10);
@@ -542,6 +536,15 @@ if (window.pdfjsLib) {
       var lastContentY = cell.y1;
 
       for (var sy = cell.y1; sy < Math.min(H, maxDepth); sy++) {
+        // v12：先检查是否有绿色像素（下一个型号），有则立即停止
+        var hasGreen = false;
+        for (var gx = x0; gx < x1; gx++) {
+          if (greenMask[sy * W + gx]) { hasGreen = true; break; }
+        }
+        if (hasGreen) {
+          return lastContentY + 1;
+        }
+
         var rowContent = 0;
         for (var sx = x0; sx < x1; sx++) {
           if (blackMask[sy * W + sx]) rowContent++;
@@ -559,7 +562,6 @@ if (window.pdfjsLib) {
       return Math.min(H, lastContentY + 1);
     }
 
-    // 计算每个 cell 的 specBottom
     for (var ri3 = 0; ri3 < rows.length; ri3++) {
       for (var ci3 = 0; ci3 < rows[ri3].length; ci3++) {
         rows[ri3][ci3].specBottom = findSpecBottom(rows[ri3][ci3]);
@@ -573,7 +575,7 @@ if (window.pdfjsLib) {
       for (var ci4 = 0; ci4 < row.length; ci4++) {
         var cell = row[ci4];
 
-        // 顶：找正上方同列（cx 差 < 100）最近 cell 的 specBottom
+        // 顶：找正上方同列最近 cell 的 specBottom
         var y0 = 0;
         for (var ti = 0; ti < allModelCells.length; ti++) {
           var other = allModelCells[ti];
@@ -586,22 +588,47 @@ if (window.pdfjsLib) {
           }
         }
 
-        // 底：自己的 specBottom
         var y1 = cell.specBottom;
-
-        // 左：同行左侧 cell 的 x1
         var x0 = 0;
         if (ci4 > 0) x0 = row[ci4 - 1].x1;
-
-        // 右：同行右侧 cell 的 x0
         var x1 = W;
         if (ci4 < row.length - 1) x1 = row[ci4 + 1].x0;
 
-        blocks.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+        blocks.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, cell: cell });
       }
     }
 
     if (!blocks.length) return [];
+
+    // === v12 关键：过滤纯文字块（无实心产品图） ===
+    function hasSolidContent(bx0, by0, bx1, by1) {
+      var bw = bx1 - bx0;
+      var bh = by1 - by0;
+      if (bw < 20 || bh < 20) return false;
+
+      var winSize = 20;
+      var halfWin = winSize / 2;
+      var step = 10;
+
+      for (var wy = by0 + halfWin; wy < by1 - halfWin; wy += step) {
+        for (var wx = bx0 + halfWin; wx < bx1 - halfWin; wx += step) {
+          var count = 0;
+          var total = 0;
+          for (var dy = -halfWin; dy < halfWin; dy += 2) {
+            for (var dx = -halfWin; dx < halfWin; dx += 2) {
+              var px = Math.floor(wx + dx);
+              var py = Math.floor(wy + dy);
+              if (px >= 0 && px < W && py >= 0 && py < H) {
+                total++;
+                if (blackMask[py * W + px] || greenMask[py * W + px]) count++;
+              }
+            }
+          }
+          if (total > 0 && count / total > 0.5) return true;
+        }
+      }
+      return false;
+    }
 
     var pageArea = W * H;
     var filtered = [];
@@ -609,6 +636,8 @@ if (window.pdfjsLib) {
       var b = blocks[fi];
       if (b.w < 20 || b.h < 20) continue;
       if (b.w * b.h < pageArea * 0.003) continue;
+      // v12：必须有实心产品图
+      if (!hasSolidContent(b.x, b.y, b.x + b.w, b.y + b.h)) continue;
       filtered.push(b);
     }
 
