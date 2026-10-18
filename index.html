@@ -94,11 +94,20 @@ if (window.pdfjsLib) {
   .toggle-switch.on { background: #1f6feb; }
   .toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #fff; border-radius: 50%; transition: left 0.2s; }
   .toggle-switch.on::after { left: 22px; }
+  .split-preview-page { background: #fff; border-radius: 8px; padding: 10px; margin-bottom: 12px; }
+  .split-preview-page-title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px; }
+  .split-preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .split-block-item { position: relative; border-radius: 6px; overflow: hidden; background: #f0f1f3; border: 2px solid transparent; cursor: pointer; }
+  .split-block-item img { width: 100%; display: block; }
+  .split-block-item .block-num { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px; }
+  .split-block-item.marked { border-color: #d43c3c; opacity: 0.45; }
+  .split-block-item .del-mark { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: #d43c3c; color: #fff; font-size: 13px; line-height: 22px; text-align: center; display: none; }
+  .split-block-item.marked .del-mark { display: block; }
 </style>
 </head>
 <body>
 
-<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v14</span></div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v18</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -175,7 +184,7 @@ if (window.pdfjsLib) {
   <div class="toggle-row">
     <div>
       <div class="toggle-label">智能拆分产品块</div>
-      <div class="toggle-desc">形态学识别型号（不限颜色：绿/蓝/红/黑均可）</div>
+      <div class="toggle-desc">X 切列 + 每列 Y 切行，同列归并文字</div>
     </div>
     <div class="toggle-switch on" id="toggle-split"></div>
   </div>
@@ -188,6 +197,22 @@ if (window.pdfjsLib) {
   <div class="pdf-picker-footer">
     <div class="selected-count">已选 <b id="pdf-selected-count">0</b> 页</div>
     <button class="btn" id="pdf-import-confirm">开始导入</button>
+  </div>
+</div>
+
+<div id="split-preview" class="pdf-picker hidden">
+  <div class="pdf-picker-header">
+    <span>拆分预览 - 点击错块标记删除</span>
+    <button class="close-btn" id="split-preview-close">✕</button>
+  </div>
+  <div class="pdf-picker-meta">
+    <span>共 <b id="split-total-blocks">0</b> 块</span>
+    <span>将保存 <b id="split-keep-count" style="color:#1f6feb">0</b> 块</span>
+  </div>
+  <div class="pdf-picker-grid" id="split-preview-grid" style="display:block"></div>
+  <div class="pdf-picker-footer">
+    <button class="btn btn-danger" id="split-discard-all" style="margin-bottom:8px">全部丢弃</button>
+    <button class="btn" id="split-confirm-import">确认导入</button>
   </div>
 </div>
 
@@ -392,9 +417,7 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== v14：形态学识别型号文字（不限颜色） ==========
-  // 型号特征：行高大（≥12px）+ 粗体（密度高）+ 行宽较长（≥25px）
-  // 规格文字：行高小（5-9px）+ 细体 + 行宽可长可短
+  // ========== v18 = v5 双向投影分割（X 切列，每列 Y 切行）+ v16 预览 ==========
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -415,225 +438,104 @@ if (window.pdfjsLib) {
       var g = imgData[i * 4 + 1];
       var b = imgData[i * 4 + 2];
       var gray = (r * 299 + g * 587 + b * 114) / 1000;
-      if (gray < 200) darkMask[i] = 1;
+      if (gray < 220) darkMask[i] = 1;
     }
 
-    // Y 投影找所有"文字行"
-    var darkY = new Uint32Array(H);
-    for (var y = 0; y < H; y++) {
-      for (var x = 0; x < W; x++) {
-        if (darkMask[y * W + x]) darkY[y]++;
-      }
-    }
-
-    var allTextRows = [];
-    var rowStart = -1;
-    for (var ri = 0; ri < H; ri++) {
-      if (darkY[ri] >= 2) {
-        if (rowStart === -1) rowStart = ri;
-      } else {
-        if (rowStart !== -1) {
-          if (ri - rowStart >= 4) {
-            allTextRows.push({ y0: rowStart, y1: ri });
-          }
-          rowStart = -1;
-        }
-      }
-    }
-    if (rowStart !== -1 && H - rowStart >= 4) {
-      allTextRows.push({ y0: rowStart, y1: H });
-    }
-
-    if (!allTextRows.length) return [];
-
-    // 筛选"型号行"：行高 ≥ 10px 且 行内前景密度 > 0.1 且 行宽 ≥ 25px
-    var modelRows = [];
-    for (var mi = 0; mi < allTextRows.length; mi++) {
-      var row = allTextRows[mi];
-      var rowH = row.y1 - row.y0;
-      if (rowH < 10) continue;  // 行高太小 → 规格文字
-
-      // 行内前景统计
-      var minX = W, maxX = 0, darkCount = 0;
-      for (var yy = row.y0; yy < row.y1; yy++) {
-        for (var xx = 0; xx < W; xx++) {
-          if (darkMask[yy * W + xx]) {
-            darkCount++;
-            if (xx < minX) minX = xx;
-            if (xx > maxX) maxX = xx;
-          }
-        }
-      }
-      var rowW = maxX - minX + 1;
-      if (rowW < 25) continue;  // 行宽太短 → 可能是孤立符号
-
-      var density = darkCount / (rowH * rowW);
-      if (density < 0.1) continue;  // 密度太低 → 细体或稀疏
-
-      row.minX = minX;
-      row.maxX = maxX;
-      row.density = density;
-      modelRows.push(row);
-    }
-
-    if (!modelRows.length) return [];
-
-    // 每个型号行内 X 投影找型号 cell
-    var allModelCells = [];
-    for (var mi2 = 0; mi2 < modelRows.length; mi2++) {
-      var mrow = modelRows[mi2];
-      var darkX = new Uint32Array(W);
-      for (var yy2 = mrow.y0; yy2 < mrow.y1; yy2++) {
-        for (var xx2 = 0; xx2 < W; xx2++) {
-          if (darkMask[yy2 * W + xx2]) darkX[xx2]++;
-        }
-      }
-
-      var colStart = -1;
-      for (var ci = 0; ci < W; ci++) {
-        if (darkX[ci] >= 1) {
-          if (colStart === -1) colStart = ci;
+    function findBlankBands(proj, len, minWidth, blankThresh) {
+      var bands = [];
+      var start = -1;
+      for (var i = 0; i < len; i++) {
+        if (proj[i] <= blankThresh) {
+          if (start === -1) start = i;
         } else {
-          if (colStart !== -1) {
-            if (ci - colStart >= 5) {
-              allModelCells.push({
-                x0: colStart, x1: ci,
-                y0: mrow.y0, y1: mrow.y1
-              });
-            }
-            colStart = -1;
+          if (start !== -1) {
+            if (i - start >= minWidth) bands.push({ start: start, end: i });
+            start = -1;
           }
         }
       }
-      if (colStart !== -1 && W - colStart >= 5) {
-        allModelCells.push({
-          x0: colStart, x1: W,
-          y0: mrow.y0, y1: mrow.y1
+      if (start !== -1 && len - start >= minWidth) bands.push({ start: start, end: len });
+      return bands;
+    }
+
+    // Step 1: 整页 X 投影找列空白带
+    var xProj = new Uint32Array(W);
+    for (var x = 0; x < W; x++) {
+      for (var y = 0; y < H; y++) {
+        if (darkMask[y * W + x]) xProj[x]++;
+      }
+    }
+
+    var xBlankThresh = Math.max(1, Math.round(H * 0.01));
+    var xBands = findBlankBands(xProj, W, 5, xBlankThresh);
+
+    // 列范围
+    var xRanges = [];
+    var prevX = 0;
+    for (var bi = 0; bi < xBands.length; bi++) {
+      var cutX = Math.floor((xBands[bi].start + xBands[bi].end) / 2);
+      if (cutX - prevX >= 30) {
+        xRanges.push({ x0: prevX, x1: cutX });
+      }
+      prevX = cutX;
+    }
+    if (W - prevX >= 30) {
+      xRanges.push({ x0: prevX, x1: W });
+    }
+
+    if (!xRanges.length) {
+      xRanges = [{ x0: 0, x1: W }];
+    }
+
+    // Step 2: 对每列做 Y 投影
+    var allCells = [];
+    for (var ci = 0; ci < xRanges.length; ci++) {
+      var xR = xRanges[ci];
+      var colW = xR.x1 - xR.x0;
+
+      var yProj = new Uint32Array(H);
+      for (var yy = 0; yy < H; yy++) {
+        for (var xx = xR.x0; xx < xR.x1; xx++) {
+          if (darkMask[yy * W + xx]) yProj[yy]++;
+        }
+      }
+
+      var yBlankThresh = Math.max(1, Math.round(colW * 0.02));
+      var yBands = findBlankBands(yProj, H, 4, yBlankThresh);
+
+      var yRanges = [];
+      var prevY = 0;
+      for (var bj = 0; bj < yBands.length; bj++) {
+        var cutY = Math.floor((yBands[bj].start + yBands[bj].end) / 2);
+        if (cutY - prevY >= 20) {
+          yRanges.push({ y0: prevY, y1: cutY });
+        }
+        prevY = cutY;
+      }
+      if (H - prevY >= 20) {
+        yRanges.push({ y0: prevY, y1: H });
+      }
+
+      for (var yi = 0; yi < yRanges.length; yi++) {
+        var yR = yRanges[yi];
+        allCells.push({
+          x0: xR.x0, x1: xR.x1,
+          y0: yR.y0, y1: yR.y1,
+          colIdx: ci
         });
       }
     }
 
-    if (!allModelCells.length) return [];
+    if (!allCells.length) return [];
 
-    for (var ci2 = 0; ci2 < allModelCells.length; ci2++) {
-      var c = allModelCells[ci2];
-      c.cx = (c.x0 + c.x1) / 2;
-      c.cy = (c.y0 + c.y1) / 2;
-      c.h = c.y1 - c.y0;
-    }
-
-    // 按 Y 分行
-    var rows = [];
-    var sorted = allModelCells.slice().sort(function (a, b) { return a.cy - b.cy; });
-    for (var si = 0; si < sorted.length; si++) {
-      var cell = sorted[si];
-      var placed = false;
-      for (var rj = 0; rj < rows.length; rj++) {
-        var rowAvg = 0;
-        for (var rk = 0; rk < rows[rj].length; rk++) rowAvg += rows[rj][rk].cy;
-        rowAvg /= rows[rj].length;
-        if (Math.abs(cell.cy - rowAvg) < 200) {
-          rows[rj].push(cell);
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) rows.push([cell]);
-    }
-    rows.sort(function (a, b) {
-      var avgA = 0, avgB = 0;
-      for (var ai = 0; ai < a.length; ai++) avgA += a[ai].cy;
-      for (var bi = 0; bi < b.length; bi++) avgB += b[bi].cy;
-      return avgA / a.length - avgB / b.length;
-    });
-    for (var ri2 = 0; ri2 < rows.length; ri2++) {
-      rows[ri2].sort(function (a, b) { return a.cx - b.cx; });
-    }
-
-    // specBottom：向下扫描直到遇到下一个型号行 或 连续空行
-    function findSpecBottom(cell, cellRowIdx) {
-      var x0 = Math.max(0, cell.x0 - 10);
-      var x1 = Math.min(W, cell.x1 + 10);
-      var rangeW = x1 - x0;
-      var minContent = Math.max(2, Math.round(rangeW * 0.02));
-
-      // 下一行型号行的最小 y0
-      var nextModelY = H;
-      if (cellRowIdx < rows.length - 1) {
-        var nextRow = rows[cellRowIdx + 1];
-        for (var ni = 0; ni < nextRow.length; ni++) {
-          if (nextRow[ni].y0 < nextModelY) nextModelY = nextRow[ni].y0;
-        }
-      }
-
-      var consecutiveEmpty = 0;
-      var maxDepth = Math.min(nextModelY, cell.y1 + cell.h * 8);
-      var lastContentY = cell.y1;
-
-      for (var sy = cell.y1; sy < maxDepth; sy++) {
-        var rowContent = 0;
-        for (var sx = x0; sx < x1; sx++) {
-          if (darkMask[sy * W + sx]) rowContent++;
-        }
-        if (rowContent >= minContent) {
-          lastContentY = sy;
-          consecutiveEmpty = 0;
-        } else {
-          consecutiveEmpty++;
-          if (consecutiveEmpty >= 4) {
-            return lastContentY + 1;
-          }
-        }
-      }
-      return lastContentY + 1;
-    }
-
-    for (var ri3 = 0; ri3 < rows.length; ri3++) {
-      for (var ci3 = 0; ci3 < rows[ri3].length; ci3++) {
-        rows[ri3][ci3].specBottom = findSpecBottom(rows[ri3][ci3], ri3);
-      }
-    }
-
-    var blocks = [];
-    for (var ri4 = 0; ri4 < rows.length; ri4++) {
-      var row = rows[ri4];
-      for (var ci4 = 0; ci4 < row.length; ci4++) {
-        var cell = row[ci4];
-
-        var y0 = 0;
-        for (var ti = 0; ti < allModelCells.length; ti++) {
-          var other = allModelCells[ti];
-          if (other === cell) continue;
-          if (other.cy < cell.cy && Math.abs(other.cx - cell.cx) < 100) {
-            var ob = other.specBottom || other.y1;
-            if (ob > y0 && ob < cell.y0) {
-              y0 = ob;
-            }
-          }
-        }
-
-        var y1 = cell.specBottom;
-        var x0 = 0;
-        if (ci4 > 0) x0 = row[ci4 - 1].x1;
-        var x1 = W;
-        if (ci4 < row.length - 1) x1 = row[ci4 + 1].x0;
-
-        blocks.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, cell: cell });
-      }
-    }
-
-    if (!blocks.length) return [];
-
-    // 过滤纯文字块
+    // Step 3: 同列归并 - 产品 cell 向下扩展包含距离 < 30px 的文字 cell
     function hasSolidContent(bx0, by0, bx1, by1) {
       var bw = bx1 - bx0;
       var bh = by1 - by0;
       if (bw < 20 || bh < 20) return false;
-
       var winSize = 20;
       var halfWin = winSize / 2;
       var step = 10;
-
       for (var wy = by0 + halfWin; wy < by1 - halfWin; wy += step) {
         for (var wx = bx0 + halfWin; wx < bx1 - halfWin; wx += step) {
           var count = 0;
@@ -654,22 +556,56 @@ if (window.pdfjsLib) {
       return false;
     }
 
+    // 按列分组
+    var colGroups = {};
+    for (var gi = 0; gi < allCells.length; gi++) {
+      var cell = allCells[gi];
+      if (!colGroups[cell.colIdx]) colGroups[cell.colIdx] = [];
+      colGroups[cell.colIdx].push(cell);
+    }
+
+    var blocks = [];
+    for (var colKey in colGroups) {
+      var colCells = colGroups[colKey];
+      colCells.sort(function (a, b) { return a.y0 - b.y0; });
+
+      for (var ci2 = 0; ci2 < colCells.length; ci2++) {
+        var cell = colCells[ci2];
+        if (!hasSolidContent(cell.x0, cell.y0, cell.x1, cell.y1)) continue;
+
+        // 向下归并文字 cell（距离 < 30px）
+        var blockY1 = cell.y1;
+        for (var ni = ci2 + 1; ni < colCells.length; ni++) {
+          var nextCell = colCells[ni];
+          var gap = nextCell.y0 - blockY1;
+          if (gap < 30) {
+            blockY1 = nextCell.y1;
+          } else {
+            break;
+          }
+        }
+
+        blocks.push({
+          x: cell.x0, y: cell.y0,
+          w: cell.x1 - cell.x0, h: blockY1 - cell.y0
+        });
+      }
+    }
+
+    if (!blocks.length) return [];
+
     var pageArea = W * H;
     var filtered = [];
     for (var fi = 0; fi < blocks.length; fi++) {
       var b = blocks[fi];
       if (b.w < 20 || b.h < 20) continue;
       if (b.w * b.h < pageArea * 0.003) continue;
-      if (!hasSolidContent(b.x, b.y, b.x + b.w, b.y + b.h)) continue;
       filtered.push(b);
     }
 
     if (!filtered.length) return [];
     if (filtered.length > 100) return [];
-
-    if (filtered.length === 1 && filtered[0].w * filtered[0].h > pageArea * 0.7) {
-      return [];
-    }
+    if (filtered.length === 1 && filtered[0].w * filtered[0].h > pageArea * 0.7) return [];
 
     var invScale = 1 / scale;
     var pad = Math.max(3, Math.round(4 * invScale));
@@ -978,6 +914,7 @@ if (window.pdfjsLib) {
   var pdfDocRef = null;
   var pdfVendor = '';
   var splitEnabled = true;
+  var splitPreview = [];
 
   $('toggle-split').addEventListener('click', function () {
     splitEnabled = !splitEnabled;
@@ -1119,42 +1056,39 @@ if (window.pdfjsLib) {
       indices.push(parseInt(selectedEls[i].dataset.idx, 10));
     }
     $('pdf-picker').classList.add('hidden');
-    startPdfImport(indices, pdfVendor);
+    runSplit(indices, pdfVendor);
   });
 
-  function startPdfImport(indices, vendor) {
+  function runSplit(indices, vendor) {
     var total = indices.length;
     var processed = 0;
-    var savedCount = 0;
-    var splitStats = { pagesSplit: 0, totalBlocks: 0, pagesFull: 0 };
+    splitPreview = [];
 
-    showLoading('正在导入 0/' + total);
+    showLoading('正在拆分 0/' + total);
 
     function processNext() {
       if (processed >= total) {
         hideLoading();
-        refreshLib();
-        var msg = '导入完成\n共 ' + total + ' 页，保存 ' + savedCount + ' 条记录';
-        if (splitEnabled) {
-          msg += '\n\n智能拆分：\n· ' + splitStats.pagesSplit + ' 页拆出 ' + splitStats.totalBlocks + ' 个产品块\n· ' + splitStats.pagesFull + ' 页保持整页';
-        }
-        alert(msg);
-        pdfPages = [];
-        pdfDocRef = null;
+        openSplitPreview(vendor);
         return;
       }
 
       var idx = indices[processed];
       var pageObj = pdfPages[idx];
-      $('loading-text').textContent = '正在处理第 ' + (processed + 1) + '/' + total + ' 页（P' + pageObj.pageNum + '）';
+      $('loading-text').textContent = '正在拆分第 ' + (processed + 1) + '/' + total + ' 页（P' + pageObj.pageNum + '）';
       setProgress(processed / total);
 
       if (!splitEnabled) {
-        savePageAsOne(pageObj, vendor, function () {
-          savedCount++;
-          processed++;
-          processNext();
+        splitPreview.push({
+          pageNum: pageObj.pageNum,
+          blockIdx: 0,
+          x: 0, y: 0,
+          w: pageObj.canvas.width, h: pageObj.canvas.height,
+          thumb: canvasToScaledDataURL(pageObj.canvas, 300, 0.7),
+          deleted: false
         });
+        processed++;
+        processNext();
         return;
       }
 
@@ -1166,72 +1100,177 @@ if (window.pdfjsLib) {
       }
 
       if (!blocks.length) {
-        splitStats.pagesFull++;
-        savePageAsOne(pageObj, vendor, function () {
-          savedCount++;
-          processed++;
-          processNext();
+        splitPreview.push({
+          pageNum: pageObj.pageNum,
+          blockIdx: 0,
+          x: 0, y: 0,
+          w: pageObj.canvas.width, h: pageObj.canvas.height,
+          thumb: canvasToScaledDataURL(pageObj.canvas, 300, 0.7),
+          deleted: false
         });
       } else {
-        splitStats.pagesSplit++;
-        splitStats.totalBlocks += blocks.length;
-        saveBlocksSequentially(pageObj, blocks, vendor, 0, function () {
-          savedCount += blocks.length;
-          processed++;
-          processNext();
-        });
+        for (var bi = 0; bi < blocks.length; bi++) {
+          var b = blocks[bi];
+          var blockCanvas = cropCanvas(pageObj.canvas, b.x, b.y, b.w, b.h);
+          splitPreview.push({
+            pageNum: pageObj.pageNum,
+            blockIdx: bi,
+            x: b.x, y: b.y, w: b.w, h: b.h,
+            thumb: canvasToScaledDataURL(blockCanvas, 300, 0.7),
+            deleted: false
+          });
+        }
       }
+
+      processed++;
+      processNext();
     }
 
     processNext();
   }
 
-  function savePageAsOne(pageObj, vendor, cb) {
-    var img = new Image();
-    img.onload = function () {
-      var record = {
-        name: 'P' + pageObj.pageNum,
-        vendor: vendor,
-        ahash: aHash(img),
-        dhash: dHash(img),
-        phash: pHash(img),
-        color: colorHistogram(img),
-        thumb: canvasToScaledDataURL(pageObj.canvas, 400, 0.8),
-        medium: canvasToScaledDataURL(pageObj.canvas, 1200, 0.85),
-        source: 'pdf',
-        pageNum: pageObj.pageNum,
-        ts: Date.now()
-      };
-      dbAdd(record, cb);
-    };
-    img.src = canvasToScaledDataURL(pageObj.canvas, 400, 0.8);
+  function openSplitPreview(vendor) {
+    $('split-total-blocks').textContent = splitPreview.length;
+    updateKeepCount();
+
+    var pagesMap = {};
+    for (var i = 0; i < splitPreview.length; i++) {
+      var p = splitPreview[i].pageNum;
+      if (!pagesMap[p]) pagesMap[p] = [];
+      pagesMap[p].push(i);
+    }
+
+    var html = '';
+    var pageNums = Object.keys(pagesMap).sort(function (a, b) { return a - b; });
+    for (var pi = 0; pi < pageNums.length; pi++) {
+      var pageNum = pageNums[pi];
+      var indices = pagesMap[pageNum];
+      html += '<div class="split-preview-page">' +
+        '<div class="split-preview-page-title">P' + pageNum + '（共 ' + indices.length + ' 块）</div>' +
+        '<div class="split-preview-grid">';
+      for (var bi = 0; bi < indices.length; bi++) {
+        var idx = indices[bi];
+        var blk = splitPreview[idx];
+        html += '<div class="split-block-item' + (blk.deleted ? ' marked' : '') + '" data-idx="' + idx + '">' +
+          '<img src="' + blk.thumb + '" alt="">' +
+          '<div class="block-num">' + (blk.blockIdx + 1) + '</div>' +
+          '<div class="del-mark">✕</div>' +
+          '</div>';
+      }
+      html += '</div></div>';
+    }
+    $('split-preview-grid').innerHTML = html;
+    $('split-preview').classList.remove('hidden');
+
+    var items = $('split-preview-grid').querySelectorAll('.split-block-item');
+    for (var j = 0; j < items.length; j++) {
+      (function (el) {
+        el.addEventListener('click', function () {
+          var idx = parseInt(el.dataset.idx, 10);
+          splitPreview[idx].deleted = !splitPreview[idx].deleted;
+          el.classList.toggle('marked', splitPreview[idx].deleted);
+          updateKeepCount();
+        });
+      })(items[j]);
+    }
+
+    $('split-confirm-import').dataset.vendor = vendor;
   }
 
-  function saveBlocksSequentially(pageObj, blocks, vendor, blockIdx, cb) {
-    if (blockIdx >= blocks.length) { cb(); return; }
-    var b = blocks[blockIdx];
-    var blockCanvas = cropCanvas(pageObj.canvas, b.x, b.y, b.w, b.h);
-    var img = new Image();
-    img.onload = function () {
-      var record = {
-        name: 'P' + pageObj.pageNum + '-' + (blockIdx + 1),
-        vendor: vendor,
-        ahash: aHash(img),
-        dhash: dHash(img),
-        phash: pHash(img),
-        color: colorHistogram(img),
-        thumb: canvasToScaledDataURL(blockCanvas, 400, 0.8),
-        medium: canvasToScaledDataURL(blockCanvas, 1200, 0.85),
-        source: 'pdf',
-        pageNum: pageObj.pageNum,
-        blockIdx: blockIdx,
-        ts: Date.now()
+  function updateKeepCount() {
+    var keep = 0;
+    for (var i = 0; i < splitPreview.length; i++) {
+      if (!splitPreview[i].deleted) keep++;
+    }
+    $('split-keep-count').textContent = keep;
+    $('split-confirm-import').textContent = '确认导入 ' + keep + ' 块';
+  }
+
+  $('split-preview-close').addEventListener('click', function () {
+    if (!confirm('放弃本次导入？')) return;
+    $('split-preview').classList.add('hidden');
+    splitPreview = [];
+    pdfPages = [];
+    pdfDocRef = null;
+  });
+
+  $('split-discard-all').addEventListener('click', function () {
+    if (!confirm('丢弃所有拆分结果？')) return;
+    $('split-preview').classList.add('hidden');
+    splitPreview = [];
+    pdfPages = [];
+    pdfDocRef = null;
+  });
+
+  $('split-confirm-import').addEventListener('click', function () {
+    var vendor = $('split-confirm-import').dataset.vendor || pdfVendor;
+    var keepBlocks = [];
+    for (var i = 0; i < splitPreview.length; i++) {
+      if (!splitPreview[i].deleted) keepBlocks.push(splitPreview[i]);
+    }
+    if (!keepBlocks.length) {
+      alert('没有要保存的块');
+      return;
+    }
+    $('split-preview').classList.add('hidden');
+    saveAllBlocks(keepBlocks, vendor);
+  });
+
+  function saveAllBlocks(keepBlocks, vendor) {
+    var total = keepBlocks.length;
+    var saved = 0;
+    showLoading('正在保存 0/' + total);
+
+    function saveNext() {
+      if (saved >= total) {
+        hideLoading();
+        refreshLib();
+        alert('导入完成，共保存 ' + total + ' 块');
+        splitPreview = [];
+        pdfPages = [];
+        pdfDocRef = null;
+        return;
+      }
+
+      var blk = keepBlocks[saved];
+      $('loading-text').textContent = '正在保存 ' + (saved + 1) + '/' + total;
+      setProgress(saved / total);
+
+      var pageObj = null;
+      for (var pi = 0; pi < pdfPages.length; pi++) {
+        if (pdfPages[pi].pageNum === blk.pageNum) {
+          pageObj = pdfPages[pi];
+          break;
+        }
+      }
+      if (!pageObj) { saved++; saveNext(); return; }
+
+      var blockCanvas = cropCanvas(pageObj.canvas, blk.x, blk.y, blk.w, blk.h);
+      var img = new Image();
+      img.onload = function () {
+        var record = {
+          name: 'P' + blk.pageNum + '-' + (blk.blockIdx + 1),
+          vendor: vendor,
+          ahash: aHash(img),
+          dhash: dHash(img),
+          phash: pHash(img),
+          color: colorHistogram(img),
+          thumb: canvasToScaledDataURL(blockCanvas, 400, 0.8),
+          medium: canvasToScaledDataURL(blockCanvas, 1200, 0.85),
+          source: 'pdf',
+          pageNum: blk.pageNum,
+          blockIdx: blk.blockIdx,
+          ts: Date.now()
+        };
+        dbAdd(record, function () {
+          saved++;
+          saveNext();
+        });
       };
-      dbAdd(record, function () {
-        saveBlocksSequentially(pageObj, blocks, vendor, blockIdx + 1, cb);
-      });
-    };
-    img.src = canvasToScaledDataURL(blockCanvas, 400, 0.8);
+      img.src = canvasToScaledDataURL(blockCanvas, 400, 0.8);
+    }
+
+    saveNext();
   }
 
   openDB(function () { refreshLib(); });
