@@ -98,7 +98,7 @@ if (window.pdfjsLib) {
 </head>
 <body>
 
-<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v7</span></div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v8</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -175,7 +175,7 @@ if (window.pdfjsLib) {
   <div class="toggle-row">
     <div>
       <div class="toggle-label">智能拆分产品块</div>
-      <div class="toggle-desc">以绿色型号文字为锚点，定位对应产品图</div>
+      <div class="toggle-desc">每个型号对应一个 Voronoi 区域（相邻型号的中点为界）</div>
     </div>
     <div class="toggle-switch on" id="toggle-split"></div>
   </div>
@@ -392,13 +392,8 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== 智能边界检测 v7：以绿色型号文字为锚点 ==========
-  // 思路：
-  // 1. 检测绿色像素（型号字体特征颜色）
-  // 2. 用绿色像素做 Y 投影 → 找到所有"型号行"
-  // 3. 对每个型号行做 X 投影 → 找到该行内所有"型号 cell"
-  // 4. 每个型号 cell 向上扩展包含产品图，向下扩展包含规格文字
-  // 5. 向左右扩展到页边或相邻 cell 的边界
+  // ========== v8：Voronoi 分割 ==========
+  // 每个型号 cell 是一个种子点，块的边界 = 相邻 cell 中心的中点
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -413,30 +408,18 @@ if (window.pdfjsLib) {
     sctx.drawImage(srcCanvas, 0, 0, W, H);
     var imgData = sctx.getImageData(0, 0, W, H).data;
 
-    // 两个二值化结果：
-    // 1. greenMask：只有绿色像素（型号字体）
-    // 2. darkMask：所有深色像素（产品图+文字）
+    // 检测绿色像素（型号字体）
     var greenMask = new Uint8Array(W * H);
-    var darkMask = new Uint8Array(W * H);
-
     for (var i = 0; i < W * H; i++) {
       var r = imgData[i * 4];
       var g = imgData[i * 4 + 1];
       var b = imgData[i * 4 + 2];
-
-      // 绿色判定：G 显著大于 R 和 B，且 G 足够亮
       if (g > 100 && g > r + 30 && g > b + 20) {
         greenMask[i] = 1;
       }
-
-      // 深色判定：灰度 < 200
-      var gray = (r * 299 + g * 587 + b * 114) / 1000;
-      if (gray < 200) {
-        darkMask[i] = 1;
-      }
     }
 
-    // === 第 1 步：绿色像素 Y 投影 → 找型号行 ===
+    // Y 投影找型号行
     var greenY = new Uint32Array(H);
     for (var y = 0; y < H; y++) {
       for (var x = 0; x < W; x++) {
@@ -444,7 +427,6 @@ if (window.pdfjsLib) {
       }
     }
 
-    // 型号行 = 绿色像素 >= 3 个的连续行
     var modelRows = [];
     var rowStart = -1;
     for (var ri = 0; ri < H; ri++) {
@@ -452,7 +434,7 @@ if (window.pdfjsLib) {
         if (rowStart === -1) rowStart = ri;
       } else {
         if (rowStart !== -1) {
-          if (ri - rowStart >= 5) { // 型号行至少 5px 高
+          if (ri - rowStart >= 5) {
             modelRows.push({ y0: rowStart, y1: ri });
           }
           rowStart = -1;
@@ -465,7 +447,7 @@ if (window.pdfjsLib) {
 
     if (!modelRows.length) return [];
 
-    // === 第 2 步：对每个型号行，用绿色 X 投影找该行的所有型号 cell ===
+    // 每个型号行内 X 投影找型号 cell
     var allModelCells = [];
     for (var mi = 0; mi < modelRows.length; mi++) {
       var mrow = modelRows[mi];
@@ -476,14 +458,13 @@ if (window.pdfjsLib) {
         }
       }
 
-      // 找连续绿色段
       var colStart = -1;
       for (var ci = 0; ci < W; ci++) {
         if (greenX[ci] >= 2) {
           if (colStart === -1) colStart = ci;
         } else {
           if (colStart !== -1) {
-            if (ci - colStart >= 8) { // 型号 cell 至少 8px 宽
+            if (ci - colStart >= 8) {
               allModelCells.push({
                 x0: colStart, x1: ci,
                 y0: mrow.y0, y1: mrow.y1
@@ -503,94 +484,51 @@ if (window.pdfjsLib) {
 
     if (!allModelCells.length) return [];
 
-    // 按 Y 排序，再按 X 排序
-    allModelCells.sort(function (a, b) {
-      if (Math.abs(a.y0 - b.y0) > 10) return a.y0 - b.y0;
-      return a.x0 - b.x0;
-    });
+    // 计算每个 cell 的中心
+    for (var ci2 = 0; ci2 < allModelCells.length; ci2++) {
+      var c = allModelCells[ci2];
+      c.cx = (c.x0 + c.x1) / 2;
+      c.cy = (c.y0 + c.y1) / 2;
+    }
 
-    // === 第 3 步：对每个型号 cell，确定产品块边界 ===
+    // Voronoi 分割：对每个 cell，找上下左右最近的 cell，边界取中点
     var blocks = [];
     for (var ni = 0; ni < allModelCells.length; ni++) {
       var cell = allModelCells[ni];
+      var left = null, right = null, top = null, bottom = null;
 
-      // Y 顶：向上扩展，直到遇到上一个型号 cell 的 y1，或遇到大空白
-      var blockY0 = 0;
-      if (ni > 0) {
-        var prevCell = allModelCells[ni - 1];
-        // 如果上一个 cell 在更高位置且 X 范围接近，则 blockY0 = prevCell.y1
-        if (prevCell.y1 < cell.y0) {
-          blockY0 = prevCell.y1;
-        }
-      }
+      for (var nj = 0; nj < allModelCells.length; nj++) {
+        if (ni === nj) continue;
+        var other = allModelCells[nj];
+        var dx = Math.abs(other.cx - cell.cx);
+        var dy = Math.abs(other.cy - cell.cy);
 
-      // Y 底：向下扩展，包含规格文字（直到遇到下一个型号 cell 或大空白）
-      var blockY1 = H;
-      if (ni < allModelCells.length - 1) {
-        var nextCell = allModelCells[ni + 1];
-        if (nextCell.y0 > cell.y1) {
-          blockY1 = nextCell.y0;
+        // 左侧：other 在 cell 左边，Y 接近
+        if (other.cx < cell.cx && dy < 100) {
+          if (!left || other.cx > left.cx) left = other;
         }
-      }
-      // 但不能超过 cell.y1 + 估算的规格高度（比如 5 倍型号行高）
-      var maxSpecHeight = (cell.y1 - cell.y0) * 5;
-      if (blockY1 > cell.y1 + maxSpecHeight) {
-        blockY1 = cell.y1 + maxSpecHeight;
-      }
-
-      // X 范围：从 cell.x0/x1 向左右扩展，直到遇到大空白或相邻 cell
-      // 向左扩
-      var blockX0 = 0;
-      for (var xi = cell.x0 - 1; xi >= 0; xi--) {
-        // 检查该列在 [blockY0, blockY1] 范围内是否有内容
-        var colHasContent = false;
-        for (var yi = blockY0; yi < blockY1; yi += 3) {
-          if (darkMask[yi * W + xi]) { colHasContent = true; break; }
+        // 右侧
+        if (other.cx > cell.cx && dy < 100) {
+          if (!right || other.cx < right.cx) right = other;
         }
-        if (!colHasContent) {
-          // 检查是否连续 N 列都无内容
-          var emptyCount = 0;
-          for (var xe = xi; xe >= Math.max(0, xi - 15); xe--) {
-            var hasContent = false;
-            for (var ye = blockY0; ye < blockY1; ye += 3) {
-              if (darkMask[ye * W + xe]) { hasContent = true; break; }
-            }
-            if (!hasContent) emptyCount++;
-          }
-          if (emptyCount >= 12) {
-            blockX0 = xi + 12;
-            break;
-          }
+        // 上方
+        if (other.cy < cell.cy && dx < 100) {
+          if (!top || other.cy > top.cy) top = other;
+        }
+        // 下方
+        if (other.cy > cell.cy && dx < 100) {
+          if (!bottom || other.cy < bottom.cy) bottom = other;
         }
       }
 
-      // 向右扩
-      var blockX1 = W;
-      for (var xj = cell.x1; xj < W; xj++) {
-        var colHasContent2 = false;
-        for (var yj = blockY0; yj < blockY1; yj += 3) {
-          if (darkMask[yj * W + xj]) { colHasContent2 = true; break; }
-        }
-        if (!colHasContent2) {
-          var emptyCount2 = 0;
-          for (var xe2 = xj; xe2 < Math.min(W, xj + 15); xe2++) {
-            var hasContent2 = false;
-            for (var ye2 = blockY0; ye2 < blockY1; ye2 += 3) {
-              if (darkMask[ye2 * W + xe2]) { hasContent2 = true; break; }
-            }
-            if (!hasContent2) emptyCount2++;
-          }
-          if (emptyCount2 >= 12) {
-            blockX1 = xj - 12;
-            break;
-          }
-        }
-      }
+      var x0 = left ? Math.round((left.cx + cell.cx) / 2) : 0;
+      var x1 = right ? Math.round((right.cx + cell.cx) / 2) : W;
+      var y0 = top ? Math.round((top.cy + cell.cy) / 2) : 0;
+      var y1 = bottom ? Math.round((bottom.cy + cell.cy) / 2) : H;
 
       blocks.push({
-        x: blockX0, y: blockY0,
-        w: blockX1 - blockX0,
-        h: blockY1 - blockY0
+        x: x0, y: y0,
+        w: x1 - x0, h: y1 - y0
       });
     }
 
