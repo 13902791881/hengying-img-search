@@ -98,7 +98,7 @@ if (window.pdfjsLib) {
 </head>
 <body>
 
-<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v10</span></div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v11</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -175,7 +175,7 @@ if (window.pdfjsLib) {
   <div class="toggle-row">
     <div>
       <div class="toggle-label">智能拆分产品块</div>
-      <div class="toggle-desc">型号锚点+向下扫描规格文字实际结束位置</div>
+      <div class="toggle-desc">blackMask 扫描规格文字，绿色型号不再被误判</div>
     </div>
     <div class="toggle-switch on" id="toggle-split"></div>
   </div>
@@ -392,10 +392,10 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== v10：型号锚点 + 向下扫描规格文字实际结束位置 ==========
-  // 关键修复：不再用"下一行最小 y0"作为底边界，
-  // 而是从 cell.y1 向下扫描 darkMask，找到规格文字的实际结束位置
-  // （连续多行几乎无内容 → 规格结束）
+  // ========== v11：blackMask 扫描规格，绿色型号不再被误判 ==========
+  // 关键修复：specBottom 扫描用 blackMask（不含绿色），
+  // 这样遇到下一个绿色型号文字时，blackMask 显示"无内容"，
+  // 规格文字正确结束，不会包含下一个产品
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -411,24 +411,24 @@ if (window.pdfjsLib) {
     var imgData = sctx.getImageData(0, 0, W, H).data;
 
     var greenMask = new Uint8Array(W * H);
-    var darkMask = new Uint8Array(W * H);
+    var blackMask = new Uint8Array(W * H);
 
     for (var i = 0; i < W * H; i++) {
       var r = imgData[i * 4];
       var g = imgData[i * 4 + 1];
       var b = imgData[i * 4 + 2];
 
-      if (g > 80 && g > r + 15 && g > b + 10) {
-        greenMask[i] = 1;
-      }
+      var isGreen = (g > 80 && g > r + 15 && g > b + 10);
+      if (isGreen) greenMask[i] = 1;
 
+      // blackMask：深色但不是绿色（避免规格扫描时把绿色型号当作黑色内容）
       var gray = (r * 299 + g * 587 + b * 114) / 1000;
-      if (gray < 200) {
-        darkMask[i] = 1;
+      if (gray < 200 && !isGreen) {
+        blackMask[i] = 1;
       }
     }
 
-    // Y 投影找型号行
+    // Y 投影找型号行（用 greenMask）
     var greenY = new Uint32Array(H);
     for (var y = 0; y < H; y++) {
       for (var x = 0; x < W; x++) {
@@ -501,7 +501,7 @@ if (window.pdfjsLib) {
       c.h = c.y1 - c.y0;
     }
 
-    // 按 Y 分行：Y 中心差 < 200 → 同一行
+    // 按 Y 分行
     var rows = [];
     var sorted = allModelCells.slice().sort(function (a, b) { return a.cy - b.cy; });
     for (var si = 0; si < sorted.length; si++) {
@@ -529,30 +529,29 @@ if (window.pdfjsLib) {
       rows[ri2].sort(function (a, b) { return a.cx - b.cx; });
     }
 
-    // === 关键：对每个 cell，向下扫描规格文字实际结束位置 ===
-    // 规格文字：从 cell.y1 开始向下，连续 3 行几乎无 darkMask 前景 → 结束
+    // === 用 blackMask 向下扫描规格文字实际结束位置 ===
+    // 关键：blackMask 不含绿色，所以下一个绿色型号文字不会被误判为"还有内容"
     function findSpecBottom(cell) {
       var x0 = Math.max(0, cell.x0 - 10);
       var x1 = Math.min(W, cell.x1 + 10);
       var rangeW = x1 - x0;
-      var minContent = Math.max(2, Math.round(rangeW * 0.02)); // 该行至少有 2% 前景才算有内容
+      var minContent = Math.max(2, Math.round(rangeW * 0.02));
 
       var consecutiveEmpty = 0;
-      var maxDepth = cell.y1 + cell.h * 6; // 最多向下扫 6 倍型号行高
+      var maxDepth = cell.y1 + cell.h * 8;
       var lastContentY = cell.y1;
 
       for (var sy = cell.y1; sy < Math.min(H, maxDepth); sy++) {
         var rowContent = 0;
         for (var sx = x0; sx < x1; sx++) {
-          if (darkMask[sy * W + sx]) rowContent++;
+          if (blackMask[sy * W + sx]) rowContent++;
         }
         if (rowContent >= minContent) {
           lastContentY = sy;
           consecutiveEmpty = 0;
         } else {
           consecutiveEmpty++;
-          if (consecutiveEmpty >= 3) {
-            // 连续 3 行无内容 → 规格结束
+          if (consecutiveEmpty >= 4) {
             return lastContentY + 1;
           }
         }
@@ -560,7 +559,7 @@ if (window.pdfjsLib) {
       return Math.min(H, lastContentY + 1);
     }
 
-    // 先计算每个 cell 的规格底部
+    // 计算每个 cell 的 specBottom
     for (var ri3 = 0; ri3 < rows.length; ri3++) {
       for (var ci3 = 0; ci3 < rows[ri3].length; ci3++) {
         rows[ri3][ci3].specBottom = findSpecBottom(rows[ri3][ci3]);
@@ -574,14 +573,12 @@ if (window.pdfjsLib) {
       for (var ci4 = 0; ci4 < row.length; ci4++) {
         var cell = row[ci4];
 
-        // 顶：找正上方最近的"同列"cell 的 specBottom
-        // 同列：cx 差 < 100
+        // 顶：找正上方同列（cx 差 < 100）最近 cell 的 specBottom
         var y0 = 0;
         for (var ti = 0; ti < allModelCells.length; ti++) {
           var other = allModelCells[ti];
           if (other === cell) continue;
           if (other.cy < cell.cy && Math.abs(other.cx - cell.cx) < 100) {
-            // other 在 cell 上方且同列
             var ob = other.specBottom || other.y1;
             if (ob > y0 && ob < cell.y0) {
               y0 = ob;
@@ -606,7 +603,6 @@ if (window.pdfjsLib) {
 
     if (!blocks.length) return [];
 
-    // 过滤
     var pageArea = W * H;
     var filtered = [];
     for (var fi = 0; fi < blocks.length; fi++) {
