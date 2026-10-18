@@ -4,7 +4,55 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>以图搜图</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/legacy/pdf.min.js"></script>
+<script>
+(function () {
+  var cdnList = [
+    'https://cdn.bootcdn.net/ajax/libs/pdf.js/2.16.105/legacy/pdf.min.js',
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/legacy/build/pdf.min.js',
+    'https://cdn.staticfile.org/pdf.js/2.16.105/legacy/pdf.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/legacy/pdf.min.js'
+  ];
+  var idx = 0;
+  window.__pdfReady = false;
+  window.__pdfFailed = false;
+  function tryNext() {
+    if (idx >= cdnList.length) {
+      window.__pdfFailed = true;
+      return;
+    }
+    var url = cdnList[idx];
+    idx++;
+    var s = document.createElement('script');
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      s.onload = s.onerror = null;
+      tryNext();
+    }, 10000);
+    s.onload = function () {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = url.replace('pdf.min.js', 'pdf.worker.min.js');
+        window.__pdfReady = true;
+      } else {
+        tryNext();
+      }
+    };
+    s.onerror = function () {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      tryNext();
+    };
+    s.src = url;
+    document.head.appendChild(s);
+  }
+  tryNext();
+})();
+</script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; }
@@ -514,10 +562,6 @@
 </div>
 
 <script>
-if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/legacy/pdf.worker.min.js';
-}
-
 (function () {
   'use strict';
 
@@ -1014,7 +1058,11 @@ if (window.pdfjsLib) {
 
   $('btn-import-pdf').addEventListener('click', function () {
     if (!window.pdfjsLib) {
-      alert('PDF 解析库加载失败，请检查网络后刷新页面重试');
+      if (window.__pdfFailed) {
+        alert('PDF 解析库加载失败，请检查网络后刷新页面重试');
+      } else {
+        alert('PDF 解析库正在加载中，请稍候几秒后再点击');
+      }
       return;
     }
     askVendorName('导入 PDF 图册 - 输入厂家名称', function (vendor) {
