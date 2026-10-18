@@ -98,7 +98,7 @@ if (window.pdfjsLib) {
 </head>
 <body>
 
-<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v6</span></div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v7</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -175,7 +175,7 @@ if (window.pdfjsLib) {
   <div class="toggle-row">
     <div>
       <div class="toggle-label">智能拆分产品块</div>
-      <div class="toggle-desc">每个产品 = 图 + 下方完整型号规格文字</div>
+      <div class="toggle-desc">以绿色型号文字为锚点，定位对应产品图</div>
     </div>
     <div class="toggle-switch on" id="toggle-split"></div>
   </div>
@@ -392,7 +392,13 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== 智能边界检测 v6：X/Y 双向独立切分 + 网格 cell + 严格产品识别 ==========
+  // ========== 智能边界检测 v7：以绿色型号文字为锚点 ==========
+  // 思路：
+  // 1. 检测绿色像素（型号字体特征颜色）
+  // 2. 用绿色像素做 Y 投影 → 找到所有"型号行"
+  // 3. 对每个型号行做 X 投影 → 找到该行内所有"型号 cell"
+  // 4. 每个型号 cell 向上扩展包含产品图，向下扩展包含规格文字
+  // 5. 向左右扩展到页边或相邻 cell 的边界
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -407,130 +413,201 @@ if (window.pdfjsLib) {
     sctx.drawImage(srcCanvas, 0, 0, W, H);
     var imgData = sctx.getImageData(0, 0, W, H).data;
 
-    var gray = new Uint8Array(W * H);
-    var sum = 0;
+    // 两个二值化结果：
+    // 1. greenMask：只有绿色像素（型号字体）
+    // 2. darkMask：所有深色像素（产品图+文字）
+    var greenMask = new Uint8Array(W * H);
+    var darkMask = new Uint8Array(W * H);
+
     for (var i = 0; i < W * H; i++) {
-      var g = (imgData[i * 4] * 299 + imgData[i * 4 + 1] * 587 + imgData[i * 4 + 2] * 114) / 1000;
-      gray[i] = g;
-      sum += g;
-    }
-    var avg = sum / (W * H);
-    var threshold = avg - 22; // 提高阈值，让白色马桶的淡阴影不被误判为前景
+      var r = imgData[i * 4];
+      var g = imgData[i * 4 + 1];
+      var b = imgData[i * 4 + 2];
 
-    var binary = new Uint8Array(W * H);
-    for (var j = 0; j < W * H; j++) binary[j] = gray[j] < threshold ? 1 : 0;
-
-    // === 第 1 步：整页 X 投影 → 找所有列空白带 ===
-    var projX = new Uint32Array(W);
-    for (var x = 0; x < W; x++) {
-      for (var y = 0; y < H; y++) {
-        if (binary[y * W + x]) projX[x]++;
+      // 绿色判定：G 显著大于 R 和 B，且 G 足够亮
+      if (g > 100 && g > r + 30 && g > b + 20) {
+        greenMask[i] = 1;
       }
-    }
-    // X 空白阈值：列内前景 < H*0.3% 才算空白（产品内的窄空隙不会达标）
-    var blankThreshX = Math.max(2, Math.round(H * 0.003));
-    // X 空白带最小宽度 3px
-    var colSplits = findGutters(projX, 0, W, 3, blankThreshX);
 
-    // === 第 2 步：整页 Y 投影 → 找所有行空白带 ===
-    var projY = new Uint32Array(H);
-    for (var yy = 0; yy < H; yy++) {
-      for (var xx = 0; xx < W; xx++) {
-        if (binary[yy * W + xx]) projY[yy]++;
-      }
-    }
-    // Y 空白阈值：行内前景 < W*0.3% 才算空白
-    var blankThreshY = Math.max(2, Math.round(W * 0.003));
-    // Y 空白带最小宽度 3px
-    var rowSplits = findGutters(projY, 0, H, 3, blankThreshY);
-
-    // === 第 3 步：构建网格 cell ===
-    var colRanges = buildRanges(0, W, colSplits);
-    var rowRanges = buildRanges(0, H, rowSplits);
-
-    var allCells = [];
-    for (var ri = 0; ri < rowRanges.length; ri++) {
-      for (var ci = 0; ci < colRanges.length; ci++) {
-        var cx0 = colRanges[ci][0];
-        var cx1 = colRanges[ci][1];
-        var ry0 = rowRanges[ri][0];
-        var ry1 = rowRanges[ri][1];
-        var cw = cx1 - cx0;
-        var rh = ry1 - ry0;
-        if (cw < 25 || rh < 15) continue;
-
-        var cellFill = computeCellFill(binary, cx0, ry0, cx1, ry1, W);
-        if (cellFill < 0.012) continue;
-
-        // 严格的产品识别：检测是否有大块实心区域（产品图特征）
-        // 关键：马桶图边缘有大片连续前景，文字内部都是稀疏笔划
-        var hasImage = detectSolidRegion(binary, cx0, ry0, cx1, ry1, W);
-        var isLikelyText = !hasImage;
-
-        allCells.push({
-          x: cx0, y: ry0, w: cw, h: rh,
-          fill: cellFill,
-          isProduct: hasImage,
-          isText: isLikelyText
-        });
+      // 深色判定：灰度 < 200
+      var gray = (r * 299 + g * 587 + b * 114) / 1000;
+      if (gray < 200) {
+        darkMask[i] = 1;
       }
     }
 
-    if (!allCells.length) return [];
-
-    // === 第 4 步：按列分组，产品 cell 向下扩展归并文字 ===
-    var columnGroups = {};
-    for (var mi = 0; mi < allCells.length; mi++) {
-      var c = allCells[mi];
-      var key = c.x + '_' + c.w;
-      if (!columnGroups[key]) columnGroups[key] = [];
-      columnGroups[key].push(c);
+    // === 第 1 步：绿色像素 Y 投影 → 找型号行 ===
+    var greenY = new Uint32Array(H);
+    for (var y = 0; y < H; y++) {
+      for (var x = 0; x < W; x++) {
+        if (greenMask[y * W + x]) greenY[y]++;
+      }
     }
 
-    var finalBlocks = [];
-    for (var colKey in columnGroups) {
-      var colCells = columnGroups[colKey];
-      colCells.sort(function (a, b) { return a.y - b.y; });
-
-      for (var ni = 0; ni < colCells.length; ni++) {
-        var cell = colCells[ni];
-        if (!cell.isProduct) continue;
-
-        var finalY1 = cell.y + cell.h;
-        for (var nj = ni + 1; nj < colCells.length; nj++) {
-          var nextCell = colCells[nj];
-          if (!nextCell.isText) break;
-
-          var gap = nextCell.y - finalY1;
-          if (gap > 30) break;
-
-          finalY1 = nextCell.y + nextCell.h;
+    // 型号行 = 绿色像素 >= 3 个的连续行
+    var modelRows = [];
+    var rowStart = -1;
+    for (var ri = 0; ri < H; ri++) {
+      if (greenY[ri] >= 3) {
+        if (rowStart === -1) rowStart = ri;
+      } else {
+        if (rowStart !== -1) {
+          if (ri - rowStart >= 5) { // 型号行至少 5px 高
+            modelRows.push({ y0: rowStart, y1: ri });
+          }
+          rowStart = -1;
         }
+      }
+    }
+    if (rowStart !== -1 && H - rowStart >= 5) {
+      modelRows.push({ y0: rowStart, y1: H });
+    }
 
-        finalBlocks.push({
-          x: cell.x,
-          y: cell.y,
-          w: cell.w,
-          h: finalY1 - cell.y
+    if (!modelRows.length) return [];
+
+    // === 第 2 步：对每个型号行，用绿色 X 投影找该行的所有型号 cell ===
+    var allModelCells = [];
+    for (var mi = 0; mi < modelRows.length; mi++) {
+      var mrow = modelRows[mi];
+      var greenX = new Uint32Array(W);
+      for (var yy = mrow.y0; yy < mrow.y1; yy++) {
+        for (var xx = 0; xx < W; xx++) {
+          if (greenMask[yy * W + xx]) greenX[xx]++;
+        }
+      }
+
+      // 找连续绿色段
+      var colStart = -1;
+      for (var ci = 0; ci < W; ci++) {
+        if (greenX[ci] >= 2) {
+          if (colStart === -1) colStart = ci;
+        } else {
+          if (colStart !== -1) {
+            if (ci - colStart >= 8) { // 型号 cell 至少 8px 宽
+              allModelCells.push({
+                x0: colStart, x1: ci,
+                y0: mrow.y0, y1: mrow.y1
+              });
+            }
+            colStart = -1;
+          }
+        }
+      }
+      if (colStart !== -1 && W - colStart >= 8) {
+        allModelCells.push({
+          x0: colStart, x1: W,
+          y0: mrow.y0, y1: mrow.y1
         });
       }
     }
 
-    if (!finalBlocks.length) return [];
+    if (!allModelCells.length) return [];
 
+    // 按 Y 排序，再按 X 排序
+    allModelCells.sort(function (a, b) {
+      if (Math.abs(a.y0 - b.y0) > 10) return a.y0 - b.y0;
+      return a.x0 - b.x0;
+    });
+
+    // === 第 3 步：对每个型号 cell，确定产品块边界 ===
+    var blocks = [];
+    for (var ni = 0; ni < allModelCells.length; ni++) {
+      var cell = allModelCells[ni];
+
+      // Y 顶：向上扩展，直到遇到上一个型号 cell 的 y1，或遇到大空白
+      var blockY0 = 0;
+      if (ni > 0) {
+        var prevCell = allModelCells[ni - 1];
+        // 如果上一个 cell 在更高位置且 X 范围接近，则 blockY0 = prevCell.y1
+        if (prevCell.y1 < cell.y0) {
+          blockY0 = prevCell.y1;
+        }
+      }
+
+      // Y 底：向下扩展，包含规格文字（直到遇到下一个型号 cell 或大空白）
+      var blockY1 = H;
+      if (ni < allModelCells.length - 1) {
+        var nextCell = allModelCells[ni + 1];
+        if (nextCell.y0 > cell.y1) {
+          blockY1 = nextCell.y0;
+        }
+      }
+      // 但不能超过 cell.y1 + 估算的规格高度（比如 5 倍型号行高）
+      var maxSpecHeight = (cell.y1 - cell.y0) * 5;
+      if (blockY1 > cell.y1 + maxSpecHeight) {
+        blockY1 = cell.y1 + maxSpecHeight;
+      }
+
+      // X 范围：从 cell.x0/x1 向左右扩展，直到遇到大空白或相邻 cell
+      // 向左扩
+      var blockX0 = 0;
+      for (var xi = cell.x0 - 1; xi >= 0; xi--) {
+        // 检查该列在 [blockY0, blockY1] 范围内是否有内容
+        var colHasContent = false;
+        for (var yi = blockY0; yi < blockY1; yi += 3) {
+          if (darkMask[yi * W + xi]) { colHasContent = true; break; }
+        }
+        if (!colHasContent) {
+          // 检查是否连续 N 列都无内容
+          var emptyCount = 0;
+          for (var xe = xi; xe >= Math.max(0, xi - 15); xe--) {
+            var hasContent = false;
+            for (var ye = blockY0; ye < blockY1; ye += 3) {
+              if (darkMask[ye * W + xe]) { hasContent = true; break; }
+            }
+            if (!hasContent) emptyCount++;
+          }
+          if (emptyCount >= 12) {
+            blockX0 = xi + 12;
+            break;
+          }
+        }
+      }
+
+      // 向右扩
+      var blockX1 = W;
+      for (var xj = cell.x1; xj < W; xj++) {
+        var colHasContent2 = false;
+        for (var yj = blockY0; yj < blockY1; yj += 3) {
+          if (darkMask[yj * W + xj]) { colHasContent2 = true; break; }
+        }
+        if (!colHasContent2) {
+          var emptyCount2 = 0;
+          for (var xe2 = xj; xe2 < Math.min(W, xj + 15); xe2++) {
+            var hasContent2 = false;
+            for (var ye2 = blockY0; ye2 < blockY1; ye2 += 3) {
+              if (darkMask[ye2 * W + xe2]) { hasContent2 = true; break; }
+            }
+            if (!hasContent2) emptyCount2++;
+          }
+          if (emptyCount2 >= 12) {
+            blockX1 = xj - 12;
+            break;
+          }
+        }
+      }
+
+      blocks.push({
+        x: blockX0, y: blockY0,
+        w: blockX1 - blockX0,
+        h: blockY1 - blockY0
+      });
+    }
+
+    if (!blocks.length) return [];
+
+    // 过滤
     var pageArea = W * H;
     var filtered = [];
-    for (var fi = 0; fi < finalBlocks.length; fi++) {
-      var b = finalBlocks[fi];
-      var area = b.w * b.h;
-      if (area < pageArea * 0.008) continue;
-      if (area > pageArea * 0.95) continue;
+    for (var fi = 0; fi < blocks.length; fi++) {
+      var b = blocks[fi];
+      if (b.w < 30 || b.h < 30) continue;
+      if (b.w * b.h < pageArea * 0.005) continue;
       filtered.push(b);
     }
 
     if (!filtered.length) return [];
-    if (filtered.length > 50) return [];
-    if (filtered.length === 1 && filtered[0].w * filtered[0].h > pageArea * 0.85) return [];
+    if (filtered.length > 60) return [];
 
     var invScale = 1 / scale;
     var pad = Math.max(3, Math.round(4 * invScale));
@@ -544,71 +621,6 @@ if (window.pdfjsLib) {
       result.push({ x: rx, y: ry, w: rw, h: rh });
     }
     return result;
-  }
-
-  // 严格的产品识别：需要找到 20x20 窗口填充率 > 50% 才认为是产品图
-  // 文字 cell 内部不会有这么大的实心区域
-  function detectSolidRegion(binary, x0, y0, x1, y1, W) {
-    var w = x1 - x0;
-    var h = y1 - y0;
-    var winSize = 20;
-    if (w < winSize || h < winSize) return false;
-
-    var step = 10;
-    for (var y = y0; y + winSize <= y1; y += step) {
-      for (var x = x0; x + winSize <= x1; x += step) {
-        var filled = 0;
-        for (var yy = 0; yy < winSize; yy++) {
-          for (var xx = 0; xx < winSize; xx++) {
-            if (binary[(y + yy) * W + (x + xx)]) filled++;
-          }
-        }
-        if (filled > winSize * winSize * 0.5) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  function computeCellFill(binary, x0, y0, x1, y1, W) {
-    var cnt = 0;
-    var total = 0;
-    for (var y = y0; y < y1; y += 2) {
-      for (var x = x0; x < x1; x += 2) {
-        total++;
-        if (binary[y * W + x]) cnt++;
-      }
-    }
-    return total ? cnt / total : 0;
-  }
-
-  function findGutters(proj, start, end, minWidth, blankThreshold) {
-    var splits = [];
-    var blankStart = -1;
-    for (var i = start; i < end; i++) {
-      if (proj[i] < blankThreshold) {
-        if (blankStart === -1) blankStart = i;
-      } else {
-        if (blankStart !== -1) {
-          var w = i - blankStart;
-          if (w >= minWidth) splits.push(Math.floor((blankStart + i) / 2));
-          blankStart = -1;
-        }
-      }
-    }
-    return splits;
-  }
-
-  function buildRanges(start, end, splits) {
-    var ranges = [];
-    var prev = start;
-    for (var i = 0; i < splits.length; i++) {
-      ranges.push([prev, splits[i]]);
-      prev = splits[i];
-    }
-    ranges.push([prev, end]);
-    return ranges;
   }
 
   function cropCanvas(srcCanvas, x, y, w, h) {
