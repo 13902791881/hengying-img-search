@@ -17,442 +17,82 @@ if (window.pdfjsLib) {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
-    background: #f5f6f8;
-    color: #222;
-    font-size: 15px;
-    line-height: 1.5;
-    padding-bottom: 70px;
-  }
-  .header {
-    background: #1f6feb;
-    color: #fff;
-    padding: 14px 16px;
-    font-size: 17px;
-    font-weight: 600;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #222; font-size: 15px; line-height: 1.5; padding-bottom: 70px; }
+  .header { background: #1f6feb; color: #fff; padding: 14px 16px; font-size: 17px; font-weight: 600; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
   .container { padding: 14px; max-width: 720px; margin: 0 auto; }
-  .card {
-    background: #fff;
-    border-radius: 10px;
-    padding: 14px;
-    margin-bottom: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-  .btn {
-    display: block;
-    width: 100%;
-    padding: 13px 0;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 500;
-    text-align: center;
-    cursor: pointer;
-    background: #1f6feb;
-    color: #fff;
-    user-select: none;
-  }
+  .card { background: #fff; border-radius: 10px; padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .btn { display: block; width: 100%; padding: 13px 0; border: none; border-radius: 8px; font-size: 16px; font-weight: 500; text-align: center; cursor: pointer; background: #1f6feb; color: #fff; user-select: none; }
   .btn:active { opacity: 0.85; }
   .btn-secondary { background: #eef2f8; color: #1f6feb; }
   .btn-danger { background: #ffe9e9; color: #d43c3c; }
   .btn + .btn { margin-top: 10px; }
-  .stat-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    color: #555;
-    font-size: 14px;
-    padding: 4px 0;
-  }
+  .stat-row { display: flex; justify-content: space-between; align-items: center; color: #555; font-size: 14px; padding: 4px 0; }
   .stat-num { color: #1f6feb; font-weight: 600; font-size: 15px; }
-  .stat-block {
-    background: #f7f9fc;
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 12px;
-  }
-  .query-preview {
-    width: 100%;
-    border-radius: 8px;
-    overflow: hidden;
-    background: #f0f1f3;
-    text-align: center;
-  }
+  .stat-block { background: #f7f9fc; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .query-preview { width: 100%; border-radius: 8px; overflow: hidden; background: #f0f1f3; text-align: center; }
   .query-preview img { max-width: 100%; max-height: 280px; display: block; margin: 0 auto; }
-  .section-title {
-    font-size: 14px;
-    color: #666;
-    margin: 14px 0 10px;
-    font-weight: 500;
-  }
-  .result-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-  .result-item {
-    background: #fff;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-  }
+  .section-title { font-size: 14px; color: #666; margin: 14px 0 10px; font-weight: 500; }
+  .result-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .result-item { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
   .result-item img { width: 100%; height: 170px; object-fit: cover; display: block; background: #f0f1f3; }
-  .result-info {
-    padding: 8px 10px;
-    font-size: 13px;
-  }
+  .result-info { padding: 8px 10px; font-size: 13px; }
   .similarity { font-weight: 600; }
   .sim-high { color: #0a8f3c; }
   .sim-mid { color: #d97706; }
   .sim-low { color: #888; }
-  .tag {
-    display: inline-block;
-    font-size: 11px;
-    padding: 1px 6px;
-    border-radius: 3px;
-    margin-left: 6px;
-    background: #eef2f8;
-    color: #666;
-  }
-  .tag-vendor {
-    background: #fff3cd;
-    color: #856404;
-  }
-  .empty-tip {
-    text-align: center;
-    color: #999;
-    padding: 40px 0;
-    font-size: 14px;
-  }
-  .tabbar {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    background: #fff;
-    border-top: 1px solid #e5e6eb;
-    display: flex;
-    z-index: 100;
-  }
-  .tabbar .tab {
-    flex: 1;
-    text-align: center;
-    padding: 10px 0 12px;
-    color: #888;
-    font-size: 13px;
-    cursor: pointer;
-    user-select: none;
-  }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-left: 6px; background: #eef2f8; color: #666; }
+  .tag-vendor { background: #fff3cd; color: #856404; }
+  .empty-tip { text-align: center; color: #999; padding: 40px 0; font-size: 14px; }
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid #e5e6eb; display: flex; z-index: 100; }
+  .tabbar .tab { flex: 1; text-align: center; padding: 10px 0 12px; color: #888; font-size: 13px; cursor: pointer; user-select: none; }
   .tabbar .tab.active { color: #1f6feb; font-weight: 600; }
   .tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
-  .lib-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-  }
-  .lib-item {
-    position: relative;
-    border-radius: 6px;
-    overflow: hidden;
-    background: #f0f1f3;
-    aspect-ratio: 1;
-  }
+  .lib-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .lib-item { position: relative; border-radius: 6px; overflow: hidden; background: #f0f1f3; aspect-ratio: 1; }
   .lib-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .lib-del {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: rgba(0,0,0,0.55);
-    color: #fff;
-    border: none;
-    font-size: 14px;
-    line-height: 24px;
-    text-align: center;
-    cursor: pointer;
-    padding: 0;
-  }
-  .lib-vendor-tag {
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    right: 0;
-    background: rgba(0,0,0,0.55);
-    color: #fff;
-    font-size: 10px;
-    padding: 2px 4px;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .lib-del { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,0.55); color: #fff; border: none; font-size: 14px; line-height: 24px; text-align: center; cursor: pointer; padding: 0; }
+  .lib-vendor-tag { position: absolute; left: 0; bottom: 0; right: 0; background: rgba(0,0,0,0.55); color: #fff; font-size: 10px; padding: 2px 4px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hidden { display: none !important; }
-  .loading-mask {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 999;
-  }
-  .loading-box {
-    background: #fff;
-    padding: 18px 28px;
-    border-radius: 8px;
-    color: #333;
-    font-size: 14px;
-    min-width: 240px;
-  }
-  .progress-track {
-    height: 4px;
-    background: #eef2f8;
-    border-radius: 2px;
-    margin-top: 10px;
-    overflow: hidden;
-  }
-  .progress-bar {
-    height: 100%;
-    background: #1f6feb;
-    width: 0%;
-    transition: width 0.15s;
-  }
-  .preview-mask {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.92);
-    z-index: 998;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+  .loading-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 999; }
+  .loading-box { background: #fff; padding: 18px 28px; border-radius: 8px; color: #333; font-size: 14px; min-width: 240px; }
+  .progress-track { height: 4px; background: #eef2f8; border-radius: 2px; margin-top: 10px; overflow: hidden; }
+  .progress-bar { height: 100%; background: #1f6feb; width: 0%; transition: width 0.15s; }
+  .preview-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 998; display: flex; align-items: center; justify-content: center; }
   .preview-mask img { max-width: 100%; max-height: 100%; object-fit: contain; }
   input[type="file"] { display: none; }
-  .vendor-filter-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-  }
-  .vendor-filter-row label {
-    font-size: 13px;
-    color: #555;
-    flex-shrink: 0;
-  }
-  .vendor-filter-row select {
-    flex: 1;
-    padding: 7px 10px;
-    border: 1px solid #d5dae1;
-    border-radius: 6px;
-    font-size: 14px;
-    background: #fff;
-    color: #333;
-  }
-  .pdf-picker {
-    position: fixed;
-    inset: 0;
-    background: #f5f6f8;
-    z-index: 500;
-    display: flex;
-    flex-direction: column;
-  }
-  .pdf-picker-header {
-    background: #1f6feb;
-    color: #fff;
-    padding: 12px 14px;
-    font-size: 15px;
-    font-weight: 600;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .pdf-picker-header .close-btn {
-    background: rgba(255,255,255,0.2);
-    border: none;
-    color: #fff;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    font-size: 16px;
-    cursor: pointer;
-    line-height: 1;
-  }
-  .pdf-picker-meta {
-    background: #fff;
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #555;
-    border-bottom: 1px solid #e5e6eb;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .pdf-picker-meta .vendor-name {
-    color: #1f6feb;
-    font-weight: 600;
-  }
-  .pdf-picker-actions {
-    background: #fff;
-    padding: 10px 14px;
-    border-bottom: 1px solid #e5e6eb;
-    display: flex;
-    gap: 8px;
-  }
-  .pdf-picker-actions .mini-btn {
-    flex: 1;
-    padding: 8px 0;
-    border: 1px solid #d5dae1;
-    border-radius: 6px;
-    background: #fff;
-    color: #333;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .pdf-picker-grid {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    align-content: start;
-  }
-  .pdf-page-item {
-    position: relative;
-    border-radius: 6px;
-    overflow: hidden;
-    background: #fff;
-    border: 2px solid transparent;
-    cursor: pointer;
-  }
+  .vendor-filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .vendor-filter-row label { font-size: 13px; color: #555; flex-shrink: 0; }
+  .vendor-filter-row select { flex: 1; padding: 7px 10px; border: 1px solid #d5dae1; border-radius: 6px; font-size: 14px; background: #fff; color: #333; }
+  .pdf-picker { position: fixed; inset: 0; background: #f5f6f8; z-index: 500; display: flex; flex-direction: column; }
+  .pdf-picker-header { background: #1f6feb; color: #fff; padding: 12px 14px; font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .pdf-picker-header .close-btn { background: rgba(255,255,255,0.2); border: none; color: #fff; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; line-height: 1; }
+  .pdf-picker-meta { background: #fff; padding: 10px 14px; font-size: 13px; color: #555; border-bottom: 1px solid #e5e6eb; display: flex; justify-content: space-between; align-items: center; }
+  .pdf-picker-meta .vendor-name { color: #1f6feb; font-weight: 600; }
+  .pdf-picker-actions { background: #fff; padding: 10px 14px; border-bottom: 1px solid #e5e6eb; display: flex; gap: 8px; }
+  .pdf-picker-actions .mini-btn { flex: 1; padding: 8px 0; border: 1px solid #d5dae1; border-radius: 6px; background: #fff; color: #333; font-size: 13px; cursor: pointer; }
+  .pdf-picker-grid { flex: 1; overflow-y: auto; padding: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; align-content: start; }
+  .pdf-page-item { position: relative; border-radius: 6px; overflow: hidden; background: #fff; border: 2px solid transparent; cursor: pointer; }
   .pdf-page-item.selected { border-color: #1f6feb; }
   .pdf-page-item img { width: 100%; display: block; }
-  .pdf-page-item .page-num {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    background: rgba(0,0,0,0.6);
-    color: #fff;
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 3px;
-  }
-  .pdf-page-item .check-mark {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: rgba(0,0,0,0.3);
-    color: #fff;
-    font-size: 13px;
-    line-height: 22px;
-    text-align: center;
-    display: none;
-  }
-  .pdf-page-item.selected .check-mark {
-    display: block;
-    background: #1f6feb;
-  }
-  .pdf-picker-footer {
-    background: #fff;
-    padding: 12px 14px;
-    border-top: 1px solid #e5e6eb;
-  }
+  .pdf-page-item .page-num { position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 3px; }
+  .pdf-page-item .check-mark { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.3); color: #fff; font-size: 13px; line-height: 22px; text-align: center; display: none; }
+  .pdf-page-item.selected .check-mark { display: block; background: #1f6feb; }
+  .pdf-picker-footer { background: #fff; padding: 12px 14px; border-top: 1px solid #e5e6eb; }
   .pdf-picker-footer .btn { margin: 0; }
-  .pdf-picker-footer .selected-count {
-    text-align: center;
-    color: #666;
-    font-size: 13px;
-    margin-bottom: 8px;
-  }
-  .vendor-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.5);
-    z-index: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-  }
-  .vendor-modal-box {
-    background: #fff;
-    border-radius: 10px;
-    padding: 18px;
-    width: 100%;
-    max-width: 320px;
-  }
-  .vendor-modal-title {
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 6px;
-    color: #222;
-  }
-  .vendor-modal-desc {
-    font-size: 13px;
-    color: #777;
-    margin-bottom: 12px;
-  }
-  .vendor-modal-box input {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #d5dae1;
-    border-radius: 6px;
-    font-size: 15px;
-    margin-bottom: 14px;
-  }
-  .vendor-modal-btns {
-    display: flex;
-    gap: 10px;
-  }
+  .pdf-picker-footer .selected-count { text-align: center; color: #666; font-size: 13px; margin-bottom: 8px; }
+  .vendor-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 600; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .vendor-modal-box { background: #fff; border-radius: 10px; padding: 18px; width: 100%; max-width: 320px; }
+  .vendor-modal-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: #222; }
+  .vendor-modal-desc { font-size: 13px; color: #777; margin-bottom: 12px; }
+  .vendor-modal-box input { width: 100%; padding: 10px 12px; border: 1px solid #d5dae1; border-radius: 6px; font-size: 15px; margin-bottom: 14px; }
+  .vendor-modal-btns { display: flex; gap: 10px; }
   .vendor-modal-btns .btn { margin: 0; flex: 1; }
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    background: #fff;
-    border-bottom: 1px solid #e5e6eb;
-  }
-  .toggle-label {
-    font-size: 14px;
-    color: #333;
-  }
-  .toggle-desc {
-    font-size: 12px;
-    color: #999;
-    margin-top: 2px;
-  }
-  .toggle-switch {
-    position: relative;
-    width: 44px;
-    height: 24px;
-    background: #d5dae1;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: background 0.2s;
-    flex-shrink: 0;
-  }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #fff; border-bottom: 1px solid #e5e6eb; }
+  .toggle-label { font-size: 14px; color: #333; }
+  .toggle-desc { font-size: 12px; color: #999; margin-top: 2px; }
+  .toggle-switch { position: relative; width: 44px; height: 24px; background: #d5dae1; border-radius: 12px; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
   .toggle-switch.on { background: #1f6feb; }
-  .toggle-switch::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 20px;
-    height: 20px;
-    background: #fff;
-    border-radius: 50%;
-    transition: left 0.2s;
-  }
+  .toggle-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #fff; border-radius: 50%; transition: left 0.2s; }
   .toggle-switch.on::after { left: 22px; }
 </style>
 </head>
@@ -465,62 +105,41 @@ if (window.pdfjsLib) {
     <button class="btn" id="btn-pick-query">📷 上传查询图片</button>
     <input type="file" id="file-query" accept="image/*">
   </div>
-
   <div id="query-preview-wrap" class="card hidden">
     <div class="section-title" style="margin-top:0">查询图片</div>
     <div class="query-preview"><img id="query-preview-img" alt=""></div>
   </div>
-
   <div id="result-section" class="hidden">
     <div class="section-title">搜索结果（按相似度排序）</div>
     <div id="result-list" class="result-grid"></div>
   </div>
-
   <div id="search-empty" class="empty-tip hidden">未找到相似图片，请先导入资料库</div>
 </div>
 
 <div id="tab-lib" class="container hidden">
   <div class="card">
     <div class="stat-block">
-      <div class="stat-row">
-        <span>库内图片总数</span>
-        <span class="stat-num" id="stat-count">0</span>
-      </div>
-      <div class="stat-row">
-        <span>占用存储空间</span>
-        <span class="stat-num" id="stat-size">0 B</span>
-      </div>
+      <div class="stat-row"><span>库内图片总数</span><span class="stat-num" id="stat-count">0</span></div>
+      <div class="stat-row"><span>占用存储空间</span><span class="stat-num" id="stat-size">0 B</span></div>
     </div>
-
     <div class="vendor-filter-row">
       <label>厂家筛选</label>
-      <select id="vendor-filter">
-        <option value="">全部厂家</option>
-      </select>
+      <select id="vendor-filter"><option value="">全部厂家</option></select>
     </div>
-
     <button class="btn" id="btn-import-pdf">📄 导入 PDF 图册</button>
     <button class="btn btn-secondary" id="btn-import-images">🖼️ 批量导入图片</button>
     <button class="btn btn-danger" id="btn-clear-lib">清空资料库</button>
-
     <input type="file" id="file-images" accept="image/*" multiple>
     <input type="file" id="file-pdf" accept="application/pdf">
   </div>
-
   <div class="section-title">库内图片（点击查看大图）</div>
   <div id="lib-list" class="lib-grid"></div>
   <div id="lib-empty" class="empty-tip">资料库为空，点击上方按钮批量导入</div>
 </div>
 
 <div class="tabbar">
-  <div class="tab active" data-tab="search">
-    <span class="tab-icon">🔍</span>
-    <span>搜图</span>
-  </div>
-  <div class="tab" data-tab="lib">
-    <span class="tab-icon">🗂️</span>
-    <span>资料库</span>
-  </div>
+  <div class="tab active" data-tab="search"><span class="tab-icon">🔍</span><span>搜图</span></div>
+  <div class="tab" data-tab="lib"><span class="tab-icon">🗂️</span><span>资料库</span></div>
 </div>
 
 <div id="loading-mask" class="loading-mask hidden">
@@ -530,9 +149,7 @@ if (window.pdfjsLib) {
   </div>
 </div>
 
-<div id="preview-mask" class="preview-mask hidden">
-  <img id="preview-img" alt="">
-</div>
+<div id="preview-mask" class="preview-mask hidden"><img id="preview-img" alt=""></div>
 
 <div id="vendor-modal" class="vendor-modal hidden">
   <div class="vendor-modal-box">
@@ -593,13 +210,8 @@ if (window.pdfjsLib) {
         d.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
       }
     };
-    req.onsuccess = function (e) {
-      db = e.target.result;
-      cb && cb();
-    };
-    req.onerror = function () {
-      alert('数据库打开失败');
-    };
+    req.onsuccess = function (e) { db = e.target.result; cb && cb(); };
+    req.onerror = function () { alert('数据库打开失败'); };
   }
 
   function dbAdd(record, cb) {
@@ -653,9 +265,7 @@ if (window.pdfjsLib) {
     }
     var avg = sum / 64;
     var hash = '';
-    for (var j = 0; j < 64; j++) {
-      hash += gray[j] >= avg ? '1' : '0';
-    }
+    for (var j = 0; j < 64; j++) hash += gray[j] >= avg ? '1' : '0';
     return hash;
   }
 
@@ -707,9 +317,7 @@ if (window.pdfjsLib) {
     var sorted = dct.slice().sort(function (a, b) { return a - b; });
     var median = sorted[Math.floor(sorted.length / 2)];
     var hash = '';
-    for (var j = 0; j < 64; j++) {
-      hash += dct[j] >= median ? '1' : '0';
-    }
+    for (var j = 0; j < 64; j++) hash += dct[j] >= median ? '1' : '0';
     return hash;
   }
 
@@ -752,17 +360,13 @@ if (window.pdfjsLib) {
 
   function hammingDistance(h1, h2) {
     var d = 0;
-    for (var i = 0; i < h1.length; i++) {
-      if (h1[i] !== h2[i]) d++;
-    }
+    for (var i = 0; i < h1.length; i++) if (h1[i] !== h2[i]) d++;
     return d;
   }
 
   function histSimilarity(h1, h2) {
     var sum = 0;
-    for (var i = 0; i < h1.length; i++) {
-      sum += Math.min(h1[i], h2[i]);
-    }
+    for (var i = 0; i < h1.length; i++) sum += Math.min(h1[i], h2[i]);
     return sum;
   }
 
@@ -788,10 +392,12 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== 智能边界检测（连通区域法） ==========
+  // ========== 智能边界检测（分行投影法） ==========
+  // 算法：先按 Y 切大行（产品行条带），再对每行独立做 X 投影切列
+  // 这样底部文字行不会污染上方产品图的 X 投影
 
   function detectProductBlocks(srcCanvas) {
-    var analysisWidth = 400;
+    var analysisWidth = 600;
     var scale = analysisWidth / srcCanvas.width;
     var W = analysisWidth;
     var H = Math.round(srcCanvas.height * scale);
@@ -803,6 +409,7 @@ if (window.pdfjsLib) {
     sctx.drawImage(srcCanvas, 0, 0, W, H);
     var imgData = sctx.getImageData(0, 0, W, H).data;
 
+    // 灰度 + 自适应阈值
     var gray = new Uint8Array(W * H);
     var sum = 0;
     for (var i = 0; i < W * H; i++) {
@@ -811,169 +418,198 @@ if (window.pdfjsLib) {
       sum += g;
     }
     var avg = sum / (W * H);
-    var threshold = avg - 20;
+    var threshold = avg - 18;
 
     var binary = new Uint8Array(W * H);
-    for (var j = 0; j < W * H; j++) {
-      binary[j] = gray[j] < threshold ? 1 : 0;
-    }
+    for (var j = 0; j < W * H; j++) binary[j] = gray[j] < threshold ? 1 : 0;
 
-    var dilateRadius = Math.max(3, Math.round(W * 0.02));
-    var dilated = dilate(binary, W, H, dilateRadius);
-
-    var labels = new Int32Array(W * H);
-    var numLabels = connectedComponents(dilated, labels, W, H);
-
-    if (numLabels === 0) return [];
-
-    var boxes = new Array(numLabels + 1);
-    for (var l = 1; l <= numLabels; l++) {
-      boxes[l] = { minX: W, minY: H, maxX: -1, maxY: -1, pixelCount: 0 };
-    }
+    // 全局 Y 投影
+    var projY = new Uint32Array(H);
     for (var y = 0; y < H; y++) {
       for (var x = 0; x < W; x++) {
-        var lb = labels[y * W + x];
-        if (lb > 0) {
-          var b = boxes[lb];
-          if (x < b.minX) b.minX = x;
-          if (x > b.maxX) b.maxX = x;
-          if (y < b.minY) b.minY = y;
-          if (y > b.maxY) b.maxY = y;
-          b.pixelCount++;
-        }
+        if (binary[y * W + x]) projY[y]++;
       }
     }
 
-    var blocks = [];
+    // Y 方向找大行（产品行条带）
+    // 阈值：行上至少有 W*0.2% 个前景像素才算"有内容"
+    var blankThreshY = Math.max(1, Math.round(W * 0.002));
+    var rowSplits = findGutters(projY, 0, H, 5, blankThreshY);
+    var rowBands = buildRanges(0, H, rowSplits);
+
+    if (!rowBands.length) return [];
+
+    // 对每个行带做处理
+    var allCells = [];
+    for (var bi = 0; bi < rowBands.length; bi++) {
+      var bandTop = rowBands[bi][0];
+      var bandBot = rowBands[bi][1];
+      var bandH = bandBot - bandTop;
+      if (bandH < 8) continue;
+
+      // 该行带内容填充率
+      var bandFill = computeBandFill(binary, bandTop, bandBot, W);
+      if (bandFill < 0.005) continue;
+
+      // 在行带内做 X 投影
+      var projX = new Uint32Array(W);
+      for (var yy = bandTop; yy < bandBot; yy++) {
+        for (var xx = 0; xx < W; xx++) {
+          if (binary[yy * W + xx]) projX[xx]++;
+        }
+      }
+
+      // X 方向空白阈值：列上至少有 bandH*0.5% 个前景像素才算"有内容"
+      var blankThreshX = Math.max(1, Math.round(bandH * 0.005));
+      var colSplits = findGutters(projX, 0, W, 3, blankThreshX);
+      var colRanges = buildRanges(0, W, colSplits);
+
+      for (var ci = 0; ci < colRanges.length; ci++) {
+        var cx0 = colRanges[ci][0];
+        var cx1 = colRanges[ci][1];
+        var cw = cx1 - cx0;
+        if (cw < 15) continue;
+
+        // cell 填充率
+        var cellFill = computeCellFill(binary, cx0, bandTop, cx1, bandBot, W);
+        if (cellFill < 0.015) continue;
+
+        // 判断是否纯文字：填充率低 + (高度小 或 宽高比大)
+        var aspect = cw / bandH;
+        var isText = cellFill < 0.09 && (bandH < 35 || aspect > 3.5);
+
+        allCells.push({
+          x: cx0,
+          y: bandTop,
+          w: cw,
+          h: bandH,
+          fill: cellFill,
+          isText: isText
+        });
+      }
+    }
+
+    if (!allCells.length) return [];
+
+    // 分类
+    var productCells = [];
+    var textCells = [];
+    for (var k = 0; k < allCells.length; k++) {
+      if (allCells[k].isText) textCells.push(allCells[k]);
+      else productCells.push(allCells[k]);
+    }
+
+    if (!productCells.length) return [];
+
+    // 文字 cell 归并到最近的产品 cell
+    for (var ti = 0; ti < textCells.length; ti++) {
+      var t = textCells[ti];
+      var best = null;
+      var bestDist = Infinity;
+      for (var pi = 0; pi < productCells.length; pi++) {
+        var p = productCells[pi];
+        // X 重叠（同列）
+        var xOverlap = !(t.x >= p.x + p.w || t.x + t.w <= p.x);
+        // Y 重叠（同行）
+        var yOverlap = !(t.y >= p.y + p.h || t.y + t.h <= p.y);
+        var dist;
+        if (xOverlap) {
+          dist = t.y + t.h <= p.y ? p.y - (t.y + t.h) : t.y - (p.y + p.h);
+          if (dist < H * 0.08 && dist < bestDist) { best = p; bestDist = dist; }
+        } else if (yOverlap) {
+          dist = t.x + t.w <= p.x ? p.x - (t.x + t.w) : t.x - (p.x + p.w);
+          if (dist < W * 0.08 && dist < bestDist) { best = p; bestDist = dist; }
+        }
+      }
+      if (best) {
+        var nx = Math.min(best.x, t.x);
+        var ny = Math.min(best.y, t.y);
+        var nx2 = Math.max(best.x + best.w, t.x + t.w);
+        var ny2 = Math.max(best.y + best.h, t.y + t.h);
+        best.x = nx; best.y = ny; best.w = nx2 - nx; best.h = ny2 - ny;
+      }
+    }
+
+    // 过滤
     var pageArea = W * H;
-    for (var lb2 = 1; lb2 <= numLabels; lb2++) {
-      var bx = boxes[lb2];
-      if (bx.maxX < 0) continue;
-      var bw = bx.maxX - bx.minX + 1;
-      var bh = bx.maxY - bx.minY + 1;
-      var barea = bw * bh;
-
-      if (barea < pageArea * 0.005) continue;
-      if (bw < 20 || bh < 20) continue;
-      if (barea > pageArea * 0.95) continue;
-
-      if (isPureTextBlock(binary, bx, W, H)) continue;
-
-      blocks.push({ x: bx.minX, y: bx.minY, w: bw, h: bh });
+    var finalCells = [];
+    for (var fi = 0; fi < productCells.length; fi++) {
+      var c = productCells[fi];
+      var area = c.w * c.h;
+      if (area < pageArea * 0.005) continue;
+      if (area > pageArea * 0.95) continue;
+      finalCells.push(c);
     }
 
-    if (blocks.length === 0) return [];
-    if (blocks.length > 30) return [];
-    if (blocks.length === 1) {
-      var b0 = blocks[0];
-      if (b0.w * b0.h > pageArea * 0.85) return [];
-    }
+    if (!finalCells.length) return [];
+    if (finalCells.length > 50) return [];
+    if (finalCells.length === 1 && finalCells[0].w * finalCells[0].h > pageArea * 0.85) return [];
 
+    // 转换回原图坐标
     var invScale = 1 / scale;
-    var pad = Math.max(4, Math.round(6 * invScale));
+    var pad = Math.max(3, Math.round(4 * invScale));
     var result = [];
-    for (var bi = 0; bi < blocks.length; bi++) {
-      var blk = blocks[bi];
-      var rx = Math.max(0, Math.round(blk.x * invScale) - pad);
-      var ry = Math.max(0, Math.round(blk.y * invScale) - pad);
-      var rw = Math.min(srcCanvas.width - rx, Math.round(blk.w * invScale) + pad * 2);
-      var rh = Math.min(srcCanvas.height - ry, Math.round(blk.h * invScale) + pad * 2);
+    for (var ri = 0; ri < finalCells.length; ri++) {
+      var cc = finalCells[ri];
+      var rx = Math.max(0, Math.round(cc.x * invScale) - pad);
+      var ry = Math.max(0, Math.round(cc.y * invScale) - pad);
+      var rw = Math.min(srcCanvas.width - rx, Math.round(cc.w * invScale) + pad * 2);
+      var rh = Math.min(srcCanvas.height - ry, Math.round(cc.h * invScale) + pad * 2);
       result.push({ x: rx, y: ry, w: rw, h: rh });
     }
     return result;
   }
 
-  function isPureTextBlock(binary, box, W, H) {
-    var bw = box.maxX - box.minX + 1;
-    var bh = box.maxY - box.minY + 1;
-
-    var winSize = Math.max(12, Math.floor(Math.min(bw, bh) / 6));
-    if (winSize > Math.min(bw, bh)) winSize = Math.min(bw, bh);
-    if (winSize < 8) {
-      return true;
-    }
-
-    var step = Math.max(2, Math.floor(winSize / 3));
-
-    for (var wy = box.minY; wy + winSize <= box.maxY + 1; wy += step) {
-      for (var wx = box.minX; wx + winSize <= box.maxX + 1; wx += step) {
-        var filled = 0;
-        var total = winSize * winSize;
-        for (var yy = 0; yy < winSize; yy++) {
-          for (var xx = 0; xx < winSize; xx++) {
-            if (binary[(wy + yy) * W + (wx + xx)]) filled++;
-          }
-        }
-        if (filled / total > 0.7) {
-          return false;
-        }
+  function computeBandFill(binary, top, bot, W) {
+    var cnt = 0;
+    var total = 0;
+    for (var y = top; y < bot; y += 2) {
+      for (var x = 0; x < W; x += 2) {
+        total++;
+        if (binary[y * W + x]) cnt++;
       }
     }
-    return true;
+    return total ? cnt / total : 0;
   }
 
-  function dilate(binary, W, H, radius) {
-    var out = new Uint8Array(W * H);
-    var tmp = new Uint8Array(W * H);
-    var y, x, k, nx, ny;
-    for (y = 0; y < H; y++) {
-      for (x = 0; x < W; x++) {
-        if (binary[y * W + x]) {
-          for (k = -radius; k <= radius; k++) {
-            nx = x + k;
-            if (nx >= 0 && nx < W) tmp[y * W + nx] = 1;
-          }
-        }
+  function computeCellFill(binary, x0, y0, x1, y1, W) {
+    var cnt = 0;
+    var total = 0;
+    for (var y = y0; y < y1; y += 2) {
+      for (var x = x0; x < x1; x += 2) {
+        total++;
+        if (binary[y * W + x]) cnt++;
       }
     }
-    for (y = 0; y < H; y++) {
-      for (x = 0; x < W; x++) {
-        if (tmp[y * W + x]) {
-          for (k = -radius; k <= radius; k++) {
-            ny = y + k;
-            if (ny >= 0 && ny < H) out[ny * W + x] = 1;
-          }
-        }
-      }
-    }
-    return out;
+    return total ? cnt / total : 0;
   }
 
-  function connectedComponents(binary, labels, W, H) {
-    var label = 0;
-    var queue = new Int32Array(W * H);
-    var qHead, qTail;
-    var dx = [-1, 0, 1, -1, 1, -1, 0, 1];
-    var dy = [-1, -1, -1, 0, 0, 1, 1, 1];
-
-    for (var i = 0; i < W * H; i++) labels[i] = 0;
-
-    for (var start = 0; start < W * H; start++) {
-      if (binary[start] && labels[start] === 0) {
-        label++;
-        qHead = 0;
-        qTail = 0;
-        queue[qTail++] = start;
-        labels[start] = label;
-        while (qHead < qTail) {
-          var cur = queue[qHead++];
-          var cy = Math.floor(cur / W);
-          var cx = cur % W;
-          for (var d = 0; d < 8; d++) {
-            var ny = cy + dy[d];
-            var nx = cx + dx[d];
-            if (ny >= 0 && ny < H && nx >= 0 && nx < W) {
-              var ni = ny * W + nx;
-              if (binary[ni] && labels[ni] === 0) {
-                labels[ni] = label;
-                queue[qTail++] = ni;
-              }
-            }
-          }
+  function findGutters(proj, start, end, minWidth, blankThreshold) {
+    var splits = [];
+    var blankStart = -1;
+    for (var i = start; i < end; i++) {
+      if (proj[i] < blankThreshold) {
+        if (blankStart === -1) blankStart = i;
+      } else {
+        if (blankStart !== -1) {
+          var w = i - blankStart;
+          if (w >= minWidth) splits.push(Math.floor((blankStart + i) / 2));
+          blankStart = -1;
         }
       }
     }
-    return label;
+    return splits;
+  }
+
+  function buildRanges(start, end, splits) {
+    var ranges = [];
+    var prev = start;
+    for (var i = 0; i < splits.length; i++) {
+      ranges.push([prev, splits[i]]);
+      prev = splits[i];
+    }
+    ranges.push([prev, end]);
+    return ranges;
   }
 
   function cropCanvas(srcCanvas, x, y, w, h) {
@@ -988,9 +624,7 @@ if (window.pdfjsLib) {
     var w = canvas.width;
     var h = canvas.height;
     var scale = Math.min(1, maxSize / Math.max(w, h));
-    if (scale >= 1) {
-      return canvas.toDataURL('image/jpeg', quality);
-    }
+    if (scale >= 1) return canvas.toDataURL('image/jpeg', quality);
     var out = document.createElement('canvas');
     out.width = Math.round(w * scale);
     out.height = Math.round(h * scale);
@@ -998,7 +632,7 @@ if (window.pdfjsLib) {
     return out.toDataURL('image/jpeg', quality);
   }
 
-  // ========== UI 工具 ==========
+  // ========== UI ==========
 
   function showLoading(text) {
     $('loading-text').textContent = text || '处理中…';
@@ -1006,13 +640,9 @@ if (window.pdfjsLib) {
     setProgress(0);
   }
 
-  function hideLoading() {
-    $('loading-mask').classList.add('hidden');
-  }
+  function hideLoading() { $('loading-mask').classList.add('hidden'); }
 
-  function setProgress(p) {
-    $('progress-bar').style.width = Math.round(p * 100) + '%';
-  }
+  function setProgress(p) { $('progress-bar').style.width = Math.round(p * 100) + '%'; }
 
   function formatSize(bytes) {
     if (bytes < 1024) return bytes + ' B';
@@ -1057,9 +687,7 @@ if (window.pdfjsLib) {
     vendorCallback = null;
   });
 
-  $('btn-pick-query').addEventListener('click', function () {
-    $('file-query').click();
-  });
+  $('btn-pick-query').addEventListener('click', function () { $('file-query').click(); });
 
   $('file-query').addEventListener('change', function (e) {
     var file = e.target.files && e.target.files[0];
@@ -1088,9 +716,7 @@ if (window.pdfjsLib) {
           var results = [];
           for (var i = 0; i < items.length; i++) {
             var sim = computeSimilarity(query, items[i]);
-            if (sim >= 0.55) {
-              results.push({ item: items[i], sim: sim });
-            }
+            if (sim >= 0.55) results.push({ item: items[i], sim: sim });
           }
           results.sort(function (a, b) { return b.sim - a.sim; });
           results = results.slice(0, 20);
@@ -1113,7 +739,6 @@ if (window.pdfjsLib) {
       if (sim >= 92) { cls = 'sim-high'; label = '极相似'; }
       else if (sim >= 78) { cls = 'sim-high'; label = '相似'; }
       else if (sim >= 65) { cls = 'sim-mid'; label = '可能相似'; }
-      else { cls = 'sim-low'; label = '低相似'; }
       html += '<div class="result-item" data-id="' + r.item.id + '">' +
         '<img src="' + r.item.thumb + '" alt="">' +
         '<div class="result-info">' +
@@ -1121,20 +746,16 @@ if (window.pdfjsLib) {
         '<span class="tag">' + label + '</span>' +
         (r.item.vendor ? '<span class="tag tag-vendor">' + escapeHtml(r.item.vendor) + '</span>' : '') +
         '<div style="color:#888;font-size:11px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(r.item.name || '') + '</div>' +
-        '</div>' +
-        '</div>';
+        '</div></div>';
     }
-    if (!html) {
-      html = '<div class="empty-tip" style="grid-column:1/-1">未找到相似度达标的图片</div>';
-    }
+    if (!html) html = '<div class="empty-tip" style="grid-column:1/-1">未找到相似度达标的图片</div>';
     $('result-list').innerHTML = html;
 
     var items = $('result-list').querySelectorAll('.result-item');
     for (var j = 0; j < items.length; j++) {
       (function (el) {
         el.addEventListener('click', function () {
-          var id = parseInt(el.dataset.id, 10);
-          showBigImage(id);
+          showBigImage(parseInt(el.dataset.id, 10));
         });
       })(items[j]);
     }
@@ -1152,9 +773,7 @@ if (window.pdfjsLib) {
     });
   }
 
-  $('preview-mask').addEventListener('click', function () {
-    $('preview-mask').classList.add('hidden');
-  });
+  $('preview-mask').addEventListener('click', function () { $('preview-mask').classList.add('hidden'); });
 
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1207,9 +826,7 @@ if (window.pdfjsLib) {
         btn.addEventListener('click', function (e) {
           e.stopPropagation();
           if (!confirm('确认删除该图片？')) return;
-          dbDelete(parseInt(btn.dataset.id, 10), function () {
-            refreshLib();
-          });
+          dbDelete(parseInt(btn.dataset.id, 10), function () { refreshLib(); });
         });
       })(dels[d]);
     }
@@ -1218,23 +835,17 @@ if (window.pdfjsLib) {
     for (var m = 0; m < imgs.length; m++) {
       (function (el) {
         el.addEventListener('click', function () {
-          var id = parseInt(el.dataset.id, 10);
-          showBigImage(id);
+          showBigImage(parseInt(el.dataset.id, 10));
         });
       })(imgs[m]);
     }
   }
 
-  $('vendor-filter').addEventListener('change', function () {
-    dbGetAll(renderLibList);
-  });
+  $('vendor-filter').addEventListener('change', function () { dbGetAll(renderLibList); });
 
   $('btn-clear-lib').addEventListener('click', function () {
     if (!confirm('确认清空资料库？此操作不可恢复')) return;
-    dbClear(function () {
-      refreshLib();
-      alert('已清空');
-    });
+    dbClear(function () { refreshLib(); alert('已清空'); });
   });
 
   $('btn-import-images').addEventListener('click', function () {
@@ -1366,9 +977,7 @@ if (window.pdfjsLib) {
               });
               renderPage(pageNum + 1);
             });
-          })['catch'](function () {
-            renderPage(pageNum + 1);
-          });
+          })['catch'](function () { renderPage(pageNum + 1); });
         }
         renderPage(1);
       })['catch'](function (err) {
@@ -1388,8 +997,7 @@ if (window.pdfjsLib) {
       html += '<div class="pdf-page-item selected" data-idx="' + i + '">' +
         '<img src="' + pdfPages[i].thumb + '" alt="">' +
         '<div class="page-num">P' + pdfPages[i].pageNum + '</div>' +
-        '<div class="check-mark">✓</div>' +
-        '</div>';
+        '<div class="check-mark">✓</div></div>';
     }
     $('pdf-picker-grid').innerHTML = html;
     updateSelectedCount();
@@ -1436,10 +1044,7 @@ if (window.pdfjsLib) {
 
   $('pdf-import-confirm').addEventListener('click', function () {
     var selectedEls = $('pdf-picker-grid').querySelectorAll('.pdf-page-item.selected');
-    if (!selectedEls.length) {
-      alert('请至少选择一页');
-      return;
-    }
+    if (!selectedEls.length) { alert('请至少选择一页'); return; }
     var indices = [];
     for (var i = 0; i < selectedEls.length; i++) {
       indices.push(parseInt(selectedEls[i].dataset.idx, 10));
@@ -1534,10 +1139,7 @@ if (window.pdfjsLib) {
   }
 
   function saveBlocksSequentially(pageObj, blocks, vendor, blockIdx, cb) {
-    if (blockIdx >= blocks.length) {
-      cb();
-      return;
-    }
+    if (blockIdx >= blocks.length) { cb(); return; }
     var b = blocks[blockIdx];
     var blockCanvas = cropCanvas(pageObj.canvas, b.x, b.y, b.w, b.h);
     var img = new Image();
@@ -1563,9 +1165,7 @@ if (window.pdfjsLib) {
     img.src = canvasToScaledDataURL(blockCanvas, 400, 0.8);
   }
 
-  openDB(function () {
-    refreshLib();
-  });
+  openDB(function () { refreshLib(); });
 
 })();
 </script>
