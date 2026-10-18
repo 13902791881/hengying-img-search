@@ -98,7 +98,7 @@ if (window.pdfjsLib) {
 </head>
 <body>
 
-<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v12</span></div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v14</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -175,7 +175,7 @@ if (window.pdfjsLib) {
   <div class="toggle-row">
     <div>
       <div class="toggle-label">智能拆分产品块</div>
-      <div class="toggle-desc">遇到下一个型号立即停止+过滤纯文字块</div>
+      <div class="toggle-desc">形态学识别型号（不限颜色：绿/蓝/红/黑均可）</div>
     </div>
     <div class="toggle-switch on" id="toggle-split"></div>
   </div>
@@ -392,7 +392,9 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== v12：型号锚点 + 遇到下一个型号立即停止 + 过滤纯文字块 ==========
+  // ========== v14：形态学识别型号文字（不限颜色） ==========
+  // 型号特征：行高大（≥12px）+ 粗体（密度高）+ 行宽较长（≥25px）
+  // 规格文字：行高小（5-9px）+ 细体 + 行宽可长可短
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -407,65 +409,89 @@ if (window.pdfjsLib) {
     sctx.drawImage(srcCanvas, 0, 0, W, H);
     var imgData = sctx.getImageData(0, 0, W, H).data;
 
-    var greenMask = new Uint8Array(W * H);
-    var blackMask = new Uint8Array(W * H);
-
+    var darkMask = new Uint8Array(W * H);
     for (var i = 0; i < W * H; i++) {
       var r = imgData[i * 4];
       var g = imgData[i * 4 + 1];
       var b = imgData[i * 4 + 2];
-
-      var isGreen = (g > 80 && g > r + 15 && g > b + 10);
-      if (isGreen) greenMask[i] = 1;
-
       var gray = (r * 299 + g * 587 + b * 114) / 1000;
-      if (gray < 200 && !isGreen) {
-        blackMask[i] = 1;
-      }
+      if (gray < 200) darkMask[i] = 1;
     }
 
-    // Y 投影找型号行
-    var greenY = new Uint32Array(H);
+    // Y 投影找所有"文字行"
+    var darkY = new Uint32Array(H);
     for (var y = 0; y < H; y++) {
       for (var x = 0; x < W; x++) {
-        if (greenMask[y * W + x]) greenY[y]++;
+        if (darkMask[y * W + x]) darkY[y]++;
       }
     }
 
-    var modelRows = [];
+    var allTextRows = [];
     var rowStart = -1;
     for (var ri = 0; ri < H; ri++) {
-      if (greenY[ri] >= 2) {
+      if (darkY[ri] >= 2) {
         if (rowStart === -1) rowStart = ri;
       } else {
         if (rowStart !== -1) {
-          if (ri - rowStart >= 3) {
-            modelRows.push({ y0: rowStart, y1: ri });
+          if (ri - rowStart >= 4) {
+            allTextRows.push({ y0: rowStart, y1: ri });
           }
           rowStart = -1;
         }
       }
     }
-    if (rowStart !== -1 && H - rowStart >= 3) {
-      modelRows.push({ y0: rowStart, y1: H });
+    if (rowStart !== -1 && H - rowStart >= 4) {
+      allTextRows.push({ y0: rowStart, y1: H });
+    }
+
+    if (!allTextRows.length) return [];
+
+    // 筛选"型号行"：行高 ≥ 10px 且 行内前景密度 > 0.1 且 行宽 ≥ 25px
+    var modelRows = [];
+    for (var mi = 0; mi < allTextRows.length; mi++) {
+      var row = allTextRows[mi];
+      var rowH = row.y1 - row.y0;
+      if (rowH < 10) continue;  // 行高太小 → 规格文字
+
+      // 行内前景统计
+      var minX = W, maxX = 0, darkCount = 0;
+      for (var yy = row.y0; yy < row.y1; yy++) {
+        for (var xx = 0; xx < W; xx++) {
+          if (darkMask[yy * W + xx]) {
+            darkCount++;
+            if (xx < minX) minX = xx;
+            if (xx > maxX) maxX = xx;
+          }
+        }
+      }
+      var rowW = maxX - minX + 1;
+      if (rowW < 25) continue;  // 行宽太短 → 可能是孤立符号
+
+      var density = darkCount / (rowH * rowW);
+      if (density < 0.1) continue;  // 密度太低 → 细体或稀疏
+
+      row.minX = minX;
+      row.maxX = maxX;
+      row.density = density;
+      modelRows.push(row);
     }
 
     if (!modelRows.length) return [];
 
     // 每个型号行内 X 投影找型号 cell
     var allModelCells = [];
-    for (var mi = 0; mi < modelRows.length; mi++) {
-      var mrow = modelRows[mi];
-      var greenX = new Uint32Array(W);
-      for (var yy = mrow.y0; yy < mrow.y1; yy++) {
-        for (var xx = 0; xx < W; xx++) {
-          if (greenMask[yy * W + xx]) greenX[xx]++;
+    for (var mi2 = 0; mi2 < modelRows.length; mi2++) {
+      var mrow = modelRows[mi2];
+      var darkX = new Uint32Array(W);
+      for (var yy2 = mrow.y0; yy2 < mrow.y1; yy2++) {
+        for (var xx2 = 0; xx2 < W; xx2++) {
+          if (darkMask[yy2 * W + xx2]) darkX[xx2]++;
         }
       }
 
       var colStart = -1;
       for (var ci = 0; ci < W; ci++) {
-        if (greenX[ci] >= 1) {
+        if (darkX[ci] >= 1) {
           if (colStart === -1) colStart = ci;
         } else {
           if (colStart !== -1) {
@@ -524,30 +550,30 @@ if (window.pdfjsLib) {
       rows[ri2].sort(function (a, b) { return a.cx - b.cx; });
     }
 
-    // === v12 关键：specBottom 扫描时遇到绿色立即停止 ===
-    function findSpecBottom(cell) {
+    // specBottom：向下扫描直到遇到下一个型号行 或 连续空行
+    function findSpecBottom(cell, cellRowIdx) {
       var x0 = Math.max(0, cell.x0 - 10);
       var x1 = Math.min(W, cell.x1 + 10);
       var rangeW = x1 - x0;
       var minContent = Math.max(2, Math.round(rangeW * 0.02));
 
+      // 下一行型号行的最小 y0
+      var nextModelY = H;
+      if (cellRowIdx < rows.length - 1) {
+        var nextRow = rows[cellRowIdx + 1];
+        for (var ni = 0; ni < nextRow.length; ni++) {
+          if (nextRow[ni].y0 < nextModelY) nextModelY = nextRow[ni].y0;
+        }
+      }
+
       var consecutiveEmpty = 0;
-      var maxDepth = cell.y1 + cell.h * 8;
+      var maxDepth = Math.min(nextModelY, cell.y1 + cell.h * 8);
       var lastContentY = cell.y1;
 
-      for (var sy = cell.y1; sy < Math.min(H, maxDepth); sy++) {
-        // v12：先检查是否有绿色像素（下一个型号），有则立即停止
-        var hasGreen = false;
-        for (var gx = x0; gx < x1; gx++) {
-          if (greenMask[sy * W + gx]) { hasGreen = true; break; }
-        }
-        if (hasGreen) {
-          return lastContentY + 1;
-        }
-
+      for (var sy = cell.y1; sy < maxDepth; sy++) {
         var rowContent = 0;
         for (var sx = x0; sx < x1; sx++) {
-          if (blackMask[sy * W + sx]) rowContent++;
+          if (darkMask[sy * W + sx]) rowContent++;
         }
         if (rowContent >= minContent) {
           lastContentY = sy;
@@ -559,23 +585,21 @@ if (window.pdfjsLib) {
           }
         }
       }
-      return Math.min(H, lastContentY + 1);
+      return lastContentY + 1;
     }
 
     for (var ri3 = 0; ri3 < rows.length; ri3++) {
       for (var ci3 = 0; ci3 < rows[ri3].length; ci3++) {
-        rows[ri3][ci3].specBottom = findSpecBottom(rows[ri3][ci3]);
+        rows[ri3][ci3].specBottom = findSpecBottom(rows[ri3][ci3], ri3);
       }
     }
 
-    // 对每个 cell 计算块边界
     var blocks = [];
     for (var ri4 = 0; ri4 < rows.length; ri4++) {
       var row = rows[ri4];
       for (var ci4 = 0; ci4 < row.length; ci4++) {
         var cell = row[ci4];
 
-        // 顶：找正上方同列最近 cell 的 specBottom
         var y0 = 0;
         for (var ti = 0; ti < allModelCells.length; ti++) {
           var other = allModelCells[ti];
@@ -600,7 +624,7 @@ if (window.pdfjsLib) {
 
     if (!blocks.length) return [];
 
-    // === v12 关键：过滤纯文字块（无实心产品图） ===
+    // 过滤纯文字块
     function hasSolidContent(bx0, by0, bx1, by1) {
       var bw = bx1 - bx0;
       var bh = by1 - by0;
@@ -620,7 +644,7 @@ if (window.pdfjsLib) {
               var py = Math.floor(wy + dy);
               if (px >= 0 && px < W && py >= 0 && py < H) {
                 total++;
-                if (blackMask[py * W + px] || greenMask[py * W + px]) count++;
+                if (darkMask[py * W + px]) count++;
               }
             }
           }
@@ -636,13 +660,16 @@ if (window.pdfjsLib) {
       var b = blocks[fi];
       if (b.w < 20 || b.h < 20) continue;
       if (b.w * b.h < pageArea * 0.003) continue;
-      // v12：必须有实心产品图
       if (!hasSolidContent(b.x, b.y, b.x + b.w, b.y + b.h)) continue;
       filtered.push(b);
     }
 
     if (!filtered.length) return [];
     if (filtered.length > 100) return [];
+
+    if (filtered.length === 1 && filtered[0].w * filtered[0].h > pageArea * 0.7) {
+      return [];
+    }
 
     var invScale = 1 / scale;
     var pad = Math.max(3, Math.round(4 * invScale));
