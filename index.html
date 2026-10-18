@@ -98,7 +98,7 @@ if (window.pdfjsLib) {
 </head>
 <body>
 
-<div class="header">以图搜图</div>
+<div class="header">以图搜图 <span style="font-size:11px;opacity:0.7;font-weight:normal">v4</span></div>
 
 <div id="tab-search" class="container">
   <div class="card">
@@ -175,7 +175,7 @@ if (window.pdfjsLib) {
   <div class="toggle-row">
     <div>
       <div class="toggle-label">智能拆分产品块</div>
-      <div class="toggle-desc">按空白区域把图+文识别为一个产品块，纯文字块不单独建图</div>
+      <div class="toggle-desc">每个产品 = 图 + 下方完整型号规格文字</div>
     </div>
     <div class="toggle-switch on" id="toggle-split"></div>
   </div>
@@ -392,9 +392,9 @@ if (window.pdfjsLib) {
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // ========== 智能边界检测（分行投影法） ==========
-  // 算法：先按 Y 切大行（产品行条带），再对每行独立做 X 投影切列
-  // 这样底部文字行不会污染上方产品图的 X 投影
+  // ========== 智能边界检测 v4 ==========
+  // 思路：Y 方向"组间空白"切大行带（每个行带包含一排产品和它们下方的文字）
+  //      行带内 X 投影切列，每列自然就是"图+文"整体
 
   function detectProductBlocks(srcCanvas) {
     var analysisWidth = 600;
@@ -431,27 +431,27 @@ if (window.pdfjsLib) {
       }
     }
 
-    // Y 方向找大行（产品行条带）
-    // 阈值：行上至少有 W*0.2% 个前景像素才算"有内容"
-    var blankThreshY = Math.max(1, Math.round(W * 0.002));
-    var rowSplits = findGutters(projY, 0, H, 5, blankThreshY);
+    // Y 空白阈值：行内少于 W*0.5% 个前景像素才算空白（W=600 → 3px）
+    var blankThreshY = Math.max(2, Math.round(W * 0.005));
+    // Y 空白带最小宽度 8px：大于"图到文字"的间距（3-6px），小于"组到组"的间距（15-30px）
+    // 这样图+文会留在同一行带，组之间会被切开
+    var rowSplits = findGutters(projY, 0, H, 8, blankThreshY);
     var rowBands = buildRanges(0, H, rowSplits);
 
     if (!rowBands.length) return [];
 
-    // 对每个行带做处理
     var allCells = [];
     for (var bi = 0; bi < rowBands.length; bi++) {
       var bandTop = rowBands[bi][0];
       var bandBot = rowBands[bi][1];
       var bandH = bandBot - bandTop;
-      if (bandH < 8) continue;
+      // 行带高度过滤：太窄的是孤立文字行
+      if (bandH < 25) continue;
 
-      // 该行带内容填充率
       var bandFill = computeBandFill(binary, bandTop, bandBot, W);
       if (bandFill < 0.005) continue;
 
-      // 在行带内做 X 投影
+      // 行带内 X 投影
       var projX = new Uint32Array(W);
       for (var yy = bandTop; yy < bandBot; yy++) {
         for (var xx = 0; xx < W; xx++) {
@@ -459,82 +459,40 @@ if (window.pdfjsLib) {
         }
       }
 
-      // X 方向空白阈值：列上至少有 bandH*0.5% 个前景像素才算"有内容"
-      var blankThreshX = Math.max(1, Math.round(bandH * 0.005));
-      var colSplits = findGutters(projX, 0, W, 3, blankThreshX);
+      // X 空白阈值：列内少于 bandH*1% 个前景像素才算空白
+      var blankThreshX = Math.max(2, Math.round(bandH * 0.01));
+      // X 空白带最小宽度 4px
+      var colSplits = findGutters(projX, 0, W, 4, blankThreshX);
       var colRanges = buildRanges(0, W, colSplits);
 
       for (var ci = 0; ci < colRanges.length; ci++) {
         var cx0 = colRanges[ci][0];
         var cx1 = colRanges[ci][1];
         var cw = cx1 - cx0;
-        if (cw < 15) continue;
+        if (cw < 18) continue;
 
-        // cell 填充率
         var cellFill = computeCellFill(binary, cx0, bandTop, cx1, bandBot, W);
-        if (cellFill < 0.015) continue;
+        if (cellFill < 0.012) continue;
 
-        // 判断是否纯文字：填充率低 + (高度小 或 宽高比大)
-        var aspect = cw / bandH;
-        var isText = cellFill < 0.09 && (bandH < 35 || aspect > 3.5);
+        // 判断该 cell 是否"含产品图"：检测是否有大块实心区域
+        // 文字 cell 内部都是稀疏笔划，产品 cell 内部有大面积连续前景
+        var hasImage = detectSolidRegion(binary, cx0, bandTop, cx1, bandBot, W);
+        if (!hasImage) continue; // 纯文字 cell 跳过
 
         allCells.push({
-          x: cx0,
-          y: bandTop,
-          w: cw,
-          h: bandH,
-          fill: cellFill,
-          isText: isText
+          x: cx0, y: bandTop, w: cw, h: bandH,
+          fill: cellFill
         });
       }
     }
 
     if (!allCells.length) return [];
 
-    // 分类
-    var productCells = [];
-    var textCells = [];
-    for (var k = 0; k < allCells.length; k++) {
-      if (allCells[k].isText) textCells.push(allCells[k]);
-      else productCells.push(allCells[k]);
-    }
-
-    if (!productCells.length) return [];
-
-    // 文字 cell 归并到最近的产品 cell
-    for (var ti = 0; ti < textCells.length; ti++) {
-      var t = textCells[ti];
-      var best = null;
-      var bestDist = Infinity;
-      for (var pi = 0; pi < productCells.length; pi++) {
-        var p = productCells[pi];
-        // X 重叠（同列）
-        var xOverlap = !(t.x >= p.x + p.w || t.x + t.w <= p.x);
-        // Y 重叠（同行）
-        var yOverlap = !(t.y >= p.y + p.h || t.y + t.h <= p.y);
-        var dist;
-        if (xOverlap) {
-          dist = t.y + t.h <= p.y ? p.y - (t.y + t.h) : t.y - (p.y + p.h);
-          if (dist < H * 0.08 && dist < bestDist) { best = p; bestDist = dist; }
-        } else if (yOverlap) {
-          dist = t.x + t.w <= p.x ? p.x - (t.x + t.w) : t.x - (p.x + p.w);
-          if (dist < W * 0.08 && dist < bestDist) { best = p; bestDist = dist; }
-        }
-      }
-      if (best) {
-        var nx = Math.min(best.x, t.x);
-        var ny = Math.min(best.y, t.y);
-        var nx2 = Math.max(best.x + best.w, t.x + t.w);
-        var ny2 = Math.max(best.y + best.h, t.y + t.h);
-        best.x = nx; best.y = ny; best.w = nx2 - nx; best.h = ny2 - ny;
-      }
-    }
-
     // 过滤
     var pageArea = W * H;
     var finalCells = [];
-    for (var fi = 0; fi < productCells.length; fi++) {
-      var c = productCells[fi];
+    for (var fi = 0; fi < allCells.length; fi++) {
+      var c = allCells[fi];
       var area = c.w * c.h;
       if (area < pageArea * 0.005) continue;
       if (area > pageArea * 0.95) continue;
@@ -545,7 +503,6 @@ if (window.pdfjsLib) {
     if (finalCells.length > 50) return [];
     if (finalCells.length === 1 && finalCells[0].w * finalCells[0].h > pageArea * 0.85) return [];
 
-    // 转换回原图坐标
     var invScale = 1 / scale;
     var pad = Math.max(3, Math.round(4 * invScale));
     var result = [];
@@ -558,6 +515,31 @@ if (window.pdfjsLib) {
       result.push({ x: rx, y: ry, w: rw, h: rh });
     }
     return result;
+  }
+
+  // 检测 cell 内是否有"实心区域"（产品图特征）
+  // 用 8x8 滑窗扫描，如果有窗口填充率 > 60% → 是产品图
+  function detectSolidRegion(binary, x0, y0, x1, y1, W) {
+    var w = x1 - x0;
+    var h = y1 - y0;
+    var winSize = 8;
+    if (w < winSize || h < winSize) return false;
+
+    var step = 4;
+    for (var y = y0; y + winSize <= y1; y += step) {
+      for (var x = x0; x + winSize <= x1; x += step) {
+        var filled = 0;
+        for (var yy = 0; yy < winSize; yy++) {
+          for (var xx = 0; xx < winSize; xx++) {
+            if (binary[(y + yy) * W + (x + xx)]) filled++;
+          }
+        }
+        if (filled > winSize * winSize * 0.6) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   function computeBandFill(binary, top, bot, W) {
